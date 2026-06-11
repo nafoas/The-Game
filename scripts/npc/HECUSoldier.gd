@@ -24,6 +24,7 @@ func _ready() -> void:
 
 func _start_briefing() -> void:
 	await get_tree().create_timer(1.0).timeout
+	_start_talking(5.0)
 	SubtitleManager.show_subtitle_direct(
 		"Listen up, soldier. Biden was spotted three blocks north. Move out — and don't come back without confirmation.",
 		5.0,
@@ -37,6 +38,7 @@ func _start_briefing() -> void:
 			_audio.play()
 
 	await get_tree().create_timer(6.0).timeout
+	_start_talking(4.0)
 	SubtitleManager.show_subtitle_direct(
 		"Intel confirms resistance fighters between here and the target. Engage at will.",
 		4.0,

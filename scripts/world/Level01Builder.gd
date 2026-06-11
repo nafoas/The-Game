@@ -98,14 +98,24 @@ func _build_world_environment() -> void:
 	var world_env := WorldEnvironment.new()
 	var env := Environment.new()
 
-	# Overcast dusk — dim, slightly cold gray for that Source-era gloom
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.31, 0.34, 0.39)
+	# Overcast dusk — real HL2 six-face skybox when the VTF faces load,
+	# otherwise a tinted procedural sky (never a flat color void).
+	var sky_mat := _make_skybox_material()
+	if sky_mat != null:
+		env.background_mode = Environment.BG_SKY
+		var sky := Sky.new()
+		sky.sky_material = sky_mat
+		env.sky = sky
+		env.background_energy_multiplier = 1.0
+	else:
+		env.background_mode = Environment.BG_COLOR
+		env.background_color = Color(0.31, 0.34, 0.39)
 
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.34, 0.37, 0.42)
 	env.fog_light_energy = 1.0
 	env.fog_density = 0.016
+	env.fog_sky_affect = 0.15
 
 	env.ssao_enabled = true
 	env.ssao_radius = 1.2
@@ -137,6 +147,47 @@ func _build_world_environment() -> void:
 	dir_light.directional_shadow_max_distance = 70.0
 	dir_light.rotation_degrees = Vector3(-52.0, 38.0, 0.0)
 	add_child(dir_light)
+
+
+## Builds a ShaderMaterial sampling the six HL2 sky_ep01_01 VTF faces as a
+## cubemap. Falls back to a tinted ProceduralSkyMaterial if any face (or the
+## sky shader) fails to load, so the level never shows a flat void.
+func _make_skybox_material() -> Material:
+	const SKY_SET := "res://materials/skybox/sky_ep01_01"
+	const FACES := ["ft", "bk", "lf", "rt", "up", "dn"]
+
+	var shader := load("res://materials/source_sky.gdshader") as Shader
+	var textures := {}
+	var complete := true
+	for face in FACES:
+		var path: String = "%s%s.vtf" % [SKY_SET, face]
+		var tex: Texture2D = null
+		if ResourceLoader.exists(path):
+			tex = load(path) as Texture2D
+		if tex == null:
+			complete = false
+			break
+		textures[face] = tex
+
+	if shader != null and complete:
+		var mat := ShaderMaterial.new()
+		mat.shader = shader
+		for face in FACES:
+			mat.set_shader_parameter("face_%s" % face, textures[face])
+		# Slight cool grey grade so the sky sits with the overcast dusk fog.
+		mat.set_shader_parameter("tint", Color(0.92, 0.96, 1.05))
+		mat.set_shader_parameter("energy", 1.0)
+		return mat
+
+	# Fallback: hazy greyish-blue procedural sky matching the level mood.
+	var proc := ProceduralSkyMaterial.new()
+	proc.sky_top_color = Color(0.31, 0.34, 0.39)
+	proc.sky_horizon_color = Color(0.42, 0.45, 0.5)
+	proc.ground_bottom_color = Color(0.12, 0.13, 0.15)
+	proc.ground_horizon_color = Color(0.36, 0.38, 0.42)
+	proc.sun_angle_max = 30.0
+	proc.sun_curve = 0.15
+	return proc
 
 
 # ---------------------------------------------------------------------------

@@ -42,6 +42,14 @@ var _model_node: Node3D = null
 var _collision_shape: CollisionShape3D = null
 var _combat_taunt_timer: float = 0.0
 
+# Talking animation state
+var _talk_tween: Tween = null
+var _talk_skeleton: Skeleton3D = null
+var _jaw_bone_idx: int = -1
+var _jaw_rest_pose: Transform3D = Transform3D.IDENTITY
+var _talk_node: Node3D = null
+var _talk_base_scale: Vector3 = Vector3.ONE
+
 
 func _ready() -> void:
 	_setup_nodes()
@@ -74,6 +82,7 @@ func _setup_nodes() -> void:
 
 	# Visuals: real HL2 character model when available, capsule fallback.
 	_build_visuals()
+	_setup_talk_targets()
 
 	# CollisionShape3D
 	_collision_shape = get_node_or_null("CollisionShape3D")
@@ -119,6 +128,72 @@ func _build_visuals() -> void:
 	else:
 		mat.albedo_color = Color(0.5, 0.5, 0.5)
 	_mesh_instance.material_override = mat
+
+
+# ---------------------------------------------------------------------------
+# Talking animation — jaw bone when the model has one, head/body bob otherwise
+# ---------------------------------------------------------------------------
+
+func _setup_talk_targets() -> void:
+	_talk_node = _model_node if _model_node != null else _mesh_instance
+	if _talk_node != null:
+		_talk_base_scale = _talk_node.scale
+	if _model_node == null:
+		return
+	var skel := _model_node.find_children("*", "Skeleton3D", true, false)
+	for s in skel:
+		var skeleton := s as Skeleton3D
+		for i in skeleton.get_bone_count():
+			var bone_name := skeleton.get_bone_name(i).to_lower()
+			if bone_name.contains("jaw") or bone_name.contains("mouth"):
+				_talk_skeleton = skeleton
+				_jaw_bone_idx = i
+				_jaw_rest_pose = skeleton.get_bone_pose(i)
+				return
+
+
+## Animate speech for `duration` seconds: drive the jaw bone if the imported
+## MDL skeleton has one, else do a subtle ~6 Hz scale bob on the visual node.
+func _start_talking(duration: float) -> void:
+	_stop_talking()
+	if _talk_node == null and _jaw_bone_idx < 0:
+		_setup_talk_targets()
+	duration = maxf(duration, 0.25)
+	var cycle := 1.0 / 6.0
+	var cycles := maxi(1, int(round(duration / cycle)))
+
+	_talk_tween = create_tween()
+	_talk_tween.set_loops(cycles)
+	if _talk_skeleton != null and _jaw_bone_idx >= 0:
+		_talk_tween.tween_method(_set_jaw_open, 0.0, 1.0, cycle * 0.5)
+		_talk_tween.tween_method(_set_jaw_open, 1.0, 0.0, cycle * 0.5)
+	elif _talk_node != null:
+		var open_scale := _talk_base_scale * Vector3(1.0, 1.05, 1.0)
+		_talk_tween.tween_property(_talk_node, "scale", open_scale, cycle * 0.5)
+		_talk_tween.tween_property(_talk_node, "scale", _talk_base_scale, cycle * 0.5)
+	else:
+		_talk_tween.kill()
+		_talk_tween = null
+		return
+	_talk_tween.finished.connect(_stop_talking)
+
+
+func _stop_talking() -> void:
+	if _talk_tween != null:
+		_talk_tween.kill()
+		_talk_tween = null
+	if _talk_skeleton != null and _jaw_bone_idx >= 0:
+		_talk_skeleton.set_bone_pose(_jaw_bone_idx, _jaw_rest_pose)
+	if _talk_node != null and is_instance_valid(_talk_node):
+		_talk_node.scale = _talk_base_scale
+
+
+func _set_jaw_open(amount: float) -> void:
+	if _talk_skeleton == null or _jaw_bone_idx < 0:
+		return
+	var pose := _jaw_rest_pose
+	pose.basis = pose.basis * Basis(Vector3.RIGHT, deg_to_rad(18.0) * amount)
+	_talk_skeleton.set_bone_pose(_jaw_bone_idx, pose)
 
 
 func _find_player() -> void:
@@ -378,6 +453,9 @@ func _shoot() -> void:
 
 
 func _play_voice(line_key: String) -> void:
+	# Mouth/talk animation timed roughly to the line's subtitle length.
+	if current_state != State.DEAD or line_key.begins_with("death"):
+		_start_talking(_line_duration(line_key))
 	if voice_file_prefix == "":
 		return
 	var voice_path := "res://voice/%s/%s.mp3" % [voice_file_prefix, line_key]
@@ -386,6 +464,19 @@ func _play_voice(line_key: String) -> void:
 		if stream != null and _audio != null:
 			_audio.stream = stream
 			_audio.play()
+
+
+## Approximate subtitle duration for each voice line family.
+func _line_duration(line_key: String) -> float:
+	if line_key.begins_with("alert"):
+		return 2.5
+	if line_key.begins_with("taunt"):
+		return 2.5
+	if line_key.begins_with("pain"):
+		return 1.0
+	if line_key.begins_with("death"):
+		return 2.0
+	return 2.0
 
 
 func _face_direction(dir: Vector3, delta: float) -> void:
