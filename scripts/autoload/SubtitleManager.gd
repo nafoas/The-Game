@@ -11,12 +11,24 @@ var _label: RichTextLabel = null
 var _queue: Array[Dictionary] = []
 var _running: bool = false
 var _subtitle_data: Dictionary = {}
+var _watched_scene: Node = null
 
 
 func _ready() -> void:
 	layer = 90
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_ui()
+
+
+func _process(_delta: float) -> void:
+	# Subtitles must not leak across scene transitions (e.g. a combat taunt
+	# lingering on the End of Demo screen), so drop everything queued when the
+	# current scene is swapped out.
+	var scene := get_tree().current_scene
+	if scene != _watched_scene:
+		if _watched_scene != null:
+			clear()
+		_watched_scene = scene
 
 
 func _build_ui() -> void:
@@ -67,6 +79,13 @@ func _build_ui() -> void:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+func clear() -> void:
+	_queue.clear()
+	_subtitle_data.clear()
+	if _panel != null:
+		_panel.visible = false
+
 
 func show_subtitle_direct(text: String, duration: float, speaker: String = "") -> void:
 	if text.is_empty():

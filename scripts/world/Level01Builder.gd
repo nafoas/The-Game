@@ -39,15 +39,15 @@ func _build_world_environment() -> void:
 	var world_env := WorldEnvironment.new()
 	var env := Environment.new()
 
-	# Overcast sky — gray gradient
+	# Overcast sky — dim, slightly cold gray for that Source-era gloom
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.55, 0.57, 0.60)
+	env.background_color = Color(0.33, 0.36, 0.41)
 
-	# Distance fog
+	# Distance fog — thicker and darker so the street ends dissolve into murk
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.6, 0.62, 0.65)
+	env.fog_light_color = Color(0.36, 0.39, 0.44)
 	env.fog_light_energy = 1.0
-	env.fog_density = 0.012
+	env.fog_density = 0.018
 
 	# SSAO
 	env.ssao_enabled = true
@@ -59,10 +59,10 @@ func _build_world_environment() -> void:
 	env.glow_intensity = 0.4
 	env.glow_bloom = 0.1
 
-	# Ambient
+	# Ambient — low and cool; street lamps carry the warm accents
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.55, 0.57, 0.62)
-	env.ambient_light_energy = 0.6
+	env.ambient_light_color = Color(0.38, 0.40, 0.47)
+	env.ambient_light_energy = 0.45
 
 	world_env.environment = env
 	add_child(world_env)
@@ -70,8 +70,8 @@ func _build_world_environment() -> void:
 	# Directional light with shadows
 	var dir_light := DirectionalLight3D.new()
 	dir_light.name = "SunLight"
-	dir_light.light_color = Color(0.9, 0.88, 0.82)
-	dir_light.light_energy = 1.2
+	dir_light.light_color = Color(0.72, 0.76, 0.85)
+	dir_light.light_energy = 0.7
 	dir_light.shadow_enabled = true
 	dir_light.rotation_degrees = Vector3(-55.0, 35.0, 0.0)
 	add_child(dir_light)
@@ -657,10 +657,11 @@ func _spawn_npcs() -> void:
 		var rs_scene := ResourceLoader.load(RESISTANCE_SOLDIER_SCENE) as PackedScene
 		if rs_scene != null:
 			# Street A
+			# Keep clear of the building footprints at |x| >= 7.
 			var street_positions := [
-				Vector3(10.0, 0.5, 25.0),
+				Vector3(4.0, 0.5, 25.0),
 				Vector3(5.0, 0.5, 40.0),
-				Vector3(-6.0, 0.5, 35.0),
+				Vector3(-5.5, 0.5, 35.0),
 			]
 			for pos in street_positions:
 				var rs := rs_scene.instantiate()

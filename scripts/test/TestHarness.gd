@@ -72,8 +72,10 @@ func _run() -> void:
 	await _teleport(player, Vector3(-8, 1.2, 50), 90.0)
 	await _shot("09_alley")
 
-	# Plaza.
-	await _teleport(player, Vector3(0, 1.2, 70), 180.0)
+	# Plaza — stand at the edge looking across the fountain.
+	await _teleport(player, Vector3(-6.5, 1.2, 61), 0.0)
+	_face_point(player, Vector3(0, 1.0, 70))
+	await _wait(0.5)
 	await _shot("10_plaza")
 
 	# Interior.
