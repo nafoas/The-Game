@@ -1,0 +1,25 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/Level01.gd" id="1_level"]
+[ext_resource type="Script" path="res://scripts/world/Level01Builder.gd" id="2_builder"]
+[ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="3_player"]
+[ext_resource type="PackedScene" path="res://scenes/ui/HUD.tscn" id="4_hud"]
+
+[sub_resource type="NavigationMesh" id="NavigationMesh_level"]
+vertices = PackedVector3Array(-40, 0.1, -10, -40, 0.1, 112, 40, 0.1, 112, 40, 0.1, -10)
+polygons = [PackedInt32Array(0, 1, 2, 3)]
+agent_radius = 0.4
+
+[node name="Level01" type="Node3D" groups=["gameplay"]]
+script = ExtResource("1_level")
+
+[node name="LevelBuilder" type="Node3D" parent="."]
+script = ExtResource("2_builder")
+
+[node name="NavigationRegion3D" type="NavigationRegion3D" parent="."]
+navigation_mesh = SubResource("NavigationMesh_level")
+
+[node name="Player" parent="." instance=ExtResource("3_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0)
+
+[node name="HUD" parent="." instance=ExtResource("4_hud")]

@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/npc/HECUSoldier.gd" id="1_hecu"]
+
+[node name="HECUSoldier" type="CharacterBody3D" groups=["npc"]]
+collision_layer = 4
+collision_mask = 5
+script = ExtResource("1_hecu")

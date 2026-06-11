@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/npc/ResistanceSoldier.gd" id="1_resistance"]
+
+[node name="ResistanceSoldier" type="CharacterBody3D" groups=["npc"]]
+collision_layer = 4
+collision_mask = 5
+script = ExtResource("1_resistance")

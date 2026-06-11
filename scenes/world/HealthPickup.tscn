@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/HealthPickup.gd" id="1_health"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_health"]
+radius = 0.8
+
+[node name="HealthPickup" type="Area3D"]
+collision_layer = 0
+collision_mask = 1
+script = ExtResource("1_health")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("SphereShape3D_health")

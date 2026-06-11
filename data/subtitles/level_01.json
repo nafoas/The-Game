@@ -1,0 +1,82 @@
+{
+	"level_complete": {
+		"speaker": "Sgt. Dornan",
+		"text": "Target's gone. He was never here... Demo's over, marine.",
+		"duration": 4.0
+	},
+	"briefing_01": {
+		"speaker": "Sgt. Dornan",
+		"text": "Listen up, soldier. Biden was spotted three blocks north. Move out — and don't come back without confirmation.",
+		"duration": 5.0
+	},
+	"briefing_02": {
+		"speaker": "Sgt. Dornan",
+		"text": "Intel confirms resistance fighters between here and the target. Engage at will.",
+		"duration": 4.0
+	},
+	"deploy": {
+		"speaker": "Sgt. Dornan",
+		"text": "Grab a weapon from the armory crates and get moving. This isn't a daycare, marine.",
+		"duration": 4.0
+	},
+	"objective_reminder": {
+		"speaker": "Sgt. Dornan",
+		"text": "Reminder: the Big Guy is the priority. Everything else is collateral.",
+		"duration": 3.5
+	},
+	"resistance_alert_01": {
+		"speaker": "Resistance Fighter",
+		"text": "You'll never take him alive!",
+		"duration": 2.5
+	},
+	"resistance_taunt_01": {
+		"speaker": "Resistance Fighter",
+		"text": "Biden will prevail!",
+		"duration": 2.5
+	},
+	"resistance_taunt_02": {
+		"speaker": "Resistance Fighter",
+		"text": "For the resistance!",
+		"duration": 2.5
+	},
+	"resistance_taunt_03": {
+		"speaker": "Resistance Fighter",
+		"text": "HECU scum!",
+		"duration": 2.0
+	},
+	"resistance_pain_01": {
+		"speaker": "Resistance Fighter",
+		"text": "Augh!",
+		"duration": 1.0
+	},
+	"resistance_death_01": {
+		"speaker": "Resistance Fighter",
+		"text": "Tell Joe... the deal... still stands...",
+		"duration": 3.0
+	},
+	"laugh_01": {
+		"speaker": "Joe Biden",
+		"text": "heh. C'mon, man!",
+		"duration": 2.5
+	},
+	"escaped_01": {
+		"speaker": "Joe Biden",
+		"text": "You'll have to try harder than that, jack!",
+		"duration": 3.0
+	},
+	"joe_radio_01": {
+		"speaker": "Joe Biden",
+		"text": "Here's the deal, folks: I was never even in this sector. No malarkey.",
+		"duration": 4.0
+	},
+	"checkpoint": {
+		"speaker": "",
+		"text": "[Checkpoint reached]",
+		"duration": 1.5
+	},
+	"low_health_hint": {
+		"speaker": "Sgt. Dornan",
+		"text": "Medical supplies are stashed in the alley, marine. Try not to bleed on them.",
+		"duration": 4.0
+	}
+}
