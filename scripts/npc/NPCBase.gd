@@ -7,6 +7,15 @@ const ATTACK_RANGE: float = 15.0
 const ATTACK_INTERVAL: float = 1.5
 const BULLET_DAMAGE: float = 10.0
 
+## Real HL2 character models per faction (round-robin for variety).
+## Imported MDLs come in at 0.02 scale; 1.27 restores true HL2 size (~1.83 m).
+const FACTION_MODELS: Dictionary = {
+	"resistance": ["res://models/barney.mdl", "res://models/eli.mdl", "res://models/alyx.mdl"],
+	"hecu": ["res://models/gman.mdl"],
+}
+const MODEL_SCALE: float = 1.27
+static var _model_round_robin: Dictionary = {}
+
 @export var waypoints: Array[Vector3] = []
 @export var npc_name: String = "NPC"
 @export var faction: String = "neutral"
@@ -29,6 +38,7 @@ var _nav_agent: NavigationAgent3D = null
 var _los_ray: RayCast3D = null
 var _audio: AudioStreamPlayer3D = null
 var _mesh_instance: MeshInstance3D = null
+var _model_node: Node3D = null
 var _collision_shape: CollisionShape3D = null
 var _combat_taunt_timer: float = 0.0
 
@@ -62,7 +72,36 @@ func _setup_nodes() -> void:
 		_audio.name = "AudioStreamPlayer3D"
 		add_child(_audio)
 
-	# MeshInstance3D — capsule, colored by faction
+	# Visuals: real HL2 character model when available, capsule fallback.
+	_build_visuals()
+
+	# CollisionShape3D
+	_collision_shape = get_node_or_null("CollisionShape3D")
+	if _collision_shape == null:
+		_collision_shape = CollisionShape3D.new()
+		_collision_shape.name = "CollisionShape3D"
+		var capsule_shape := CapsuleShape3D.new()
+		capsule_shape.height = 1.8
+		capsule_shape.radius = 0.4
+		_collision_shape.shape = capsule_shape
+		_collision_shape.position = Vector3(0, 0.9, 0)
+		add_child(_collision_shape)
+
+
+func _build_visuals() -> void:
+	# Try a real character model for this faction. Collision is stripped from
+	# the imported scene so the gameplay capsule keeps handling bullets/movement.
+	var paths: Array = FACTION_MODELS.get(faction, [])
+	if paths.size() > 0:
+		var idx: int = _model_round_robin.get(faction, 0)
+		_model_round_robin[faction] = idx + 1
+		var path: String = paths[idx % paths.size()]
+		_model_node = SourceMaterials.spawn_model(self, path, Vector3.ZERO, 180.0, MODEL_SCALE, true)
+
+	if _model_node != null:
+		return
+
+	# Fallback: legacy capsule
 	_mesh_instance = get_node_or_null("MeshInstance3D")
 	if _mesh_instance == null:
 		_mesh_instance = MeshInstance3D.new()
@@ -80,18 +119,6 @@ func _setup_nodes() -> void:
 	else:
 		mat.albedo_color = Color(0.5, 0.5, 0.5)
 	_mesh_instance.material_override = mat
-
-	# CollisionShape3D
-	_collision_shape = get_node_or_null("CollisionShape3D")
-	if _collision_shape == null:
-		_collision_shape = CollisionShape3D.new()
-		_collision_shape.name = "CollisionShape3D"
-		var capsule_shape := CapsuleShape3D.new()
-		capsule_shape.height = 1.8
-		capsule_shape.radius = 0.4
-		_collision_shape.shape = capsule_shape
-		_collision_shape.position = Vector3(0, 0.9, 0)
-		add_child(_collision_shape)
 
 
 func _find_player() -> void:
@@ -256,11 +283,42 @@ func take_damage(amount: float, from_direction: Vector3 = Vector3.ZERO) -> void:
 		return
 	health -= amount
 	_play_voice("pain_01")
+	_spawn_blood_puff()
 	if health <= 0.0:
 		_die()
 	else:
 		if current_state != State.COMBAT:
 			current_state = State.COMBAT
+
+
+func _spawn_blood_puff() -> void:
+	var p := CPUParticles3D.new()
+	p.amount = 10
+	p.one_shot = true
+	p.lifetime = 0.45
+	p.explosiveness = 1.0
+	p.direction = Vector3(0, 0.4, 0)
+	p.spread = 60.0
+	p.initial_velocity_min = 0.8
+	p.initial_velocity_max = 2.2
+	p.gravity = Vector3(0, -8.0, 0)
+	p.scale_amount_min = 0.025
+	p.scale_amount_max = 0.06
+	var mesh := QuadMesh.new()
+	mesh.size = Vector2(1.0, 1.0)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(0.45, 0.05, 0.04)
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mesh.material = m
+	p.mesh = mesh
+	p.position = Vector3(0, 1.2, 0)
+	p.emitting = true
+	add_child(p)
+	get_tree().create_timer(1.2).timeout.connect(func() -> void:
+		if is_instance_valid(p):
+			p.queue_free()
+	)
 
 
 func _die() -> void:
@@ -287,12 +345,21 @@ func _shoot() -> void:
 	if player_ref == null:
 		return
 
-	# Play shoot sound
-	var shoot_path := "res://sounds/weapons/pistol/pistol_fire3.wav"
-	if ResourceLoader.exists(shoot_path):
-		AudioManager.play_sfx_at(shoot_path, global_position)
-	else:
-		AudioManager.play_sfx_at("res://sounds/weapons/pistol/pistol_fire3.wav", global_position)
+	# Play shoot sound (alyx gun set — pistol_fire files don't ship in EP2)
+	var shoot_path := "res://sounds/weapons/alyx_gun/alyx_gun_fire4.wav"
+	AudioManager.play_sfx_at(shoot_path, global_position, -4.0)
+
+	# Brief muzzle blink so enemy fire reads visually
+	var flash := OmniLight3D.new()
+	flash.light_color = Color(1.0, 0.75, 0.4)
+	flash.light_energy = 1.4
+	flash.omni_range = 3.5
+	flash.position = Vector3(0, 1.35, 0.45)
+	add_child(flash)
+	get_tree().create_timer(0.05).timeout.connect(func() -> void:
+		if is_instance_valid(flash):
+			flash.queue_free()
+	)
 
 	# Raycast check toward player
 	var space_state := get_world_3d().direct_space_state
