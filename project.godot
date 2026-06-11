@@ -20,7 +20,6 @@ config/icon="res://icon.svg"
 GameManager="*res://scripts/autoload/GameManager.gd"
 SubtitleManager="*res://scripts/autoload/SubtitleManager.gd"
 AudioManager="*res://scripts/autoload/AudioManager.gd"
-TestHarness="*res://scripts/test/TestHarness.gd"
 
 [editor_plugins]
 
