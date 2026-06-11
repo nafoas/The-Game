@@ -1,0 +1,10 @@
+# Godot 4 gitignore
+.godot/
+*.uid
+*.import
+*.translation
+export_presets.cfg
+
+# OS
+.DS_Store
+Thumbs.db

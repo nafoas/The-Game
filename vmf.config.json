@@ -1,0 +1,8 @@
+{
+    "gameInfoPath": "",
+    "mapsFolder": "res://maps",
+    "modelsFolder": "res://models",
+    "materialsFolder": "res://materials",
+    "soundsFolder": "res://sounds",
+    "importScale": 0.01905
+}
