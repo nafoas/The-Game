@@ -22,6 +22,8 @@ func _ready() -> void:
 	if ambient_sound_path != "" and ResourceLoader.exists(ambient_sound_path):
 		var stream := ResourceLoader.load(ambient_sound_path) as AudioStream
 		if stream != null:
+			# Imported WAVs default to no-loop; ambient beds must cycle.
+			SourceMaterials.make_wav_loop(stream)
 			_audio.stream = stream
 
 

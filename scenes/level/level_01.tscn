@@ -20,6 +20,6 @@ script = ExtResource("2_builder")
 navigation_mesh = SubResource("NavigationMesh_level")
 
 [node name="Player" parent="." instance=ExtResource("3_player")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 0)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 1.1, 0)
 
 [node name="HUD" parent="." instance=ExtResource("4_hud")]

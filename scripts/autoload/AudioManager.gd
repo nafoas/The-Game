@@ -6,6 +6,21 @@ extends Node
 
 const SFX_POOL_SIZE: int = 10
 const MUSIC_SILENCE_DB: float = -50.0
+const MUSIC_TARGET_DB: float = -6.0
+
+## Placeholder asset paths -> real HL2/EP2 files that actually exist in the
+## repo. Several referenced files are 0-byte stand-ins; this keeps every
+## existing call site working while playing real audio.
+const REMAPS: Dictionary = {
+	"res://music/menu_theme.mp3": "res://sounds/music/vlvx_song0.mp3",
+	"res://music/cutscene_01.mp3": "res://sounds/music/vlvx_song12.mp3",
+	"res://music/level_01_ambient.mp3": "res://sounds/music/vlvx_song23ambient.mp3",
+	"res://sounds/ui/buttonrollover.wav": "res://sounds/npc/zombine/gear2.wav",
+	"res://sounds/ui/buttonclick.wav": "res://sounds/weapons/alyx_gun/alyx_shotgun_cock1.wav",
+	"res://sounds/items/item_battery_pickup.wav": "res://sounds/weapons/alyx_gun/alyx_shotgun_cock1.wav",
+	"res://sounds/items/medshot4.wav": "res://sounds/npc/combine_soldier/zipline_clothing2.wav",
+	"res://sounds/misc/radio_beep.wav": "res://sounds/ambient/levels/citadel/datatransrandom01.wav",
+}
 
 var _sfx_pool: Array[AudioStreamPlayer] = []
 var _music_player: AudioStreamPlayer = null
@@ -56,10 +71,13 @@ func _build_music_player() -> void:
 func _load_stream(path: String) -> AudioStream:
 	if path.is_empty():
 		return null
-	if not ResourceLoader.exists(path):
-		return null
-	var res: Variant = load(path)
-	var stream := res as AudioStream
+	var stream: AudioStream = null
+	if ResourceLoader.exists(path):
+		stream = load(path) as AudioStream
+	if stream == null and REMAPS.has(path):
+		var remapped: String = REMAPS[path]
+		if ResourceLoader.exists(remapped):
+			stream = load(remapped) as AudioStream
 	return stream
 
 
@@ -145,7 +163,7 @@ func play_music(path: String, fade_in: float = 1.0) -> void:
 	_music_player.play()
 
 	_music_tween = create_tween()
-	_music_tween.tween_property(_music_player, "volume_db", 0.0, maxf(fade_in, 0.01))
+	_music_tween.tween_property(_music_player, "volume_db", MUSIC_TARGET_DB, maxf(fade_in, 0.01))
 
 
 func stop_music(fade_out: float = 1.0) -> void:
@@ -162,9 +180,11 @@ func stop_music(fade_out: float = 1.0) -> void:
 func _set_stream_looping(stream: AudioStream) -> void:
 	if stream is AudioStreamWAV:
 		var wav := stream as AudioStreamWAV
+		var bytes_per_sample := 2 if wav.format == AudioStreamWAV.FORMAT_16_BITS else 1
+		var channels := 2 if wav.stereo else 1
 		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
 		wav.loop_begin = 0
-		wav.loop_end = wav.data.size()
+		wav.loop_end = int(wav.data.size() / float(bytes_per_sample * channels))
 	else:
 		# AudioStreamMP3 / AudioStreamOggVorbis both expose a `loop` bool;
 		# set() is a safe no-op for stream types that lack it.

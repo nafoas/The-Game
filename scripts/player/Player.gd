@@ -57,8 +57,12 @@ func _load_sounds() -> void:
 		"res://sounds/player/footsteps/concrete2.wav",
 		"res://sounds/player/footsteps/concrete3.wav",
 		"res://sounds/player/footsteps/concrete4.wav",
-		"res://sounds/player/footsteps/step1.wav",
-		"res://sounds/player/footsteps/step2.wav",
+		# EP2 repo has no player footstep set — combine gear foley reads as
+		# boots + kit at low volume and cycles well.
+		"res://sounds/npc/zombine/gear1.wav",
+		"res://sounds/npc/zombine/gear2.wav",
+		"res://sounds/npc/zombine/gear3.wav",
+		"res://sounds/npc/combine_soldier/zipline_clothing1.wav",
 	]
 	for path in footstep_candidates:
 		var s := _try_load(path)
@@ -68,15 +72,18 @@ func _load_sounds() -> void:
 	var pain_candidates: Array[String] = [
 		"res://sounds/player/pain1.wav",
 		"res://sounds/player/pain2.wav",
-		"res://sounds/player/pain3.wav",
-		"res://sounds/player/pl_pain5.wav",
+		"res://sounds/npc/ministrider/body_medium_impact_hard1.wav",
+		"res://sounds/npc/ministrider/body_medium_impact_hard3.wav",
 	]
 	for path in pain_candidates:
 		var s := _try_load(path)
 		if s != null:
 			_pain_streams.append(s)
 
-	for path in ["res://sounds/player/land1.wav", "res://sounds/player/pl_fallpain1.wav"]:
+	for path in [
+		"res://sounds/player/land1.wav",
+		"res://sounds/npc/combine_soldier/zipline_hitground1.wav",
+	]:
 		var s := _try_load(path)
 		if s != null:
 			_land_stream = s
@@ -229,7 +236,7 @@ func _play_footstep() -> void:
 		return
 	footstep_player.stream = _footstep_streams[_footstep_index % _footstep_streams.size()]
 	_footstep_index += 1
-	footstep_player.volume_db = -12.0
+	footstep_player.volume_db = -16.0
 	footstep_player.pitch_scale = randf_range(0.92, 1.08)
 	footstep_player.play()
 
@@ -239,7 +246,7 @@ func _check_landing() -> void:
 		_land_dip = 0.12
 		if _land_stream != null:
 			footstep_player.stream = _land_stream
-			footstep_player.volume_db = -4.0
+			footstep_player.volume_db = -8.0
 			footstep_player.pitch_scale = randf_range(0.9, 1.0)
 			footstep_player.play()
 
@@ -253,6 +260,6 @@ func take_damage(amount: float) -> void:
 	if not _pain_streams.is_empty():
 		var stream := _pain_streams[randi() % _pain_streams.size()]
 		footstep_player.stream = stream
-		footstep_player.volume_db = 0.0
+		footstep_player.volume_db = -6.0
 		footstep_player.pitch_scale = 1.0
 		footstep_player.play()

@@ -39,10 +39,11 @@ func _build_ui() -> void:
 	overlay.anchor_bottom = 1.0
 	add_child(overlay)
 
+	UiTheme.add_menu_backplate(self)
+
 	var title := Label.new()
 	title.text = "PAUSED"
-	title.add_theme_font_size_override("font_size", 44)
-	title.add_theme_color_override("font_color", TITLE_COLOR)
+	UiTheme.style_title(title, 46)
 	title.position = Vector2(64, 64)
 	add_child(title)
 
@@ -64,26 +65,14 @@ func _build_ui() -> void:
 
 
 func _add_button(parent: Control, text: String, font_size: int, callback: Callable) -> Button:
-	var btn := Button.new()
-	btn.text = text
-	btn.flat = true
-	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	btn.focus_mode = Control.FOCUS_NONE
-	btn.add_theme_font_size_override("font_size", font_size)
-	btn.add_theme_color_override("font_color", BTN_NORMAL)
-	btn.add_theme_color_override("font_hover_color", BTN_HOVER)
-	btn.add_theme_color_override("font_pressed_color", BTN_HOVER)
-	btn.add_theme_color_override("font_hover_pressed_color", BTN_HOVER)
-	btn.add_theme_color_override("font_focus_color", BTN_NORMAL)
-	btn.mouse_entered.connect(func() -> void:
-		AudioManager.play_sfx(HOVER_SOUND, -6.0)
+	var parts := UiTheme.make_menu_button(text, font_size,
+		func() -> void: AudioManager.play_sfx(HOVER_SOUND, -16.0),
+		func() -> void:
+			AudioManager.play_sfx(CLICK_SOUND, -8.0)
+			callback.call()
 	)
-	btn.pressed.connect(func() -> void:
-		AudioManager.play_sfx(CLICK_SOUND)
-		callback.call()
-	)
-	parent.add_child(btn)
-	return btn
+	parent.add_child(parts["wrap"])
+	return parts["button"]
 
 
 func _build_options() -> void:
@@ -96,6 +85,11 @@ func _build_options() -> void:
 	_options_box.offset_right = 820.0
 	_options_box.visible = false
 	add_child(_options_box)
+
+	var opt_header := Label.new()
+	opt_header.text = "OPTIONS"
+	UiTheme.style_small_caps(opt_header, 16)
+	_options_box.add_child(opt_header)
 
 	_options_box.add_child(_make_option_label("MOUSE SENSITIVITY"))
 	var sens := HSlider.new()

@@ -11,6 +11,7 @@ const LOW_HEALTH_THRESHOLD: float = 25.0
 var _health_value: Label = null
 var _armor_value: Label = null
 var _ammo_value: Label = null
+var _ammo_reserve: Label = null
 var _weapon_label: Label = null
 var _vignette: ColorRect = null
 var _objective_label: Label = null
@@ -38,17 +39,7 @@ func _ready() -> void:
 # ---------------------------------------------------------------------------
 
 func _make_panel_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = PANEL_BG
-	style.corner_radius_top_left = 6
-	style.corner_radius_top_right = 6
-	style.corner_radius_bottom_left = 6
-	style.corner_radius_bottom_right = 6
-	style.content_margin_left = 16.0
-	style.content_margin_right = 16.0
-	style.content_margin_top = 6.0
-	style.content_margin_bottom = 6.0
-	return style
+	return UiTheme.panel_style(UiTheme.PANEL_BG, 5, 20.0, 8.0)
 
 
 func _make_stat_panel(title: String) -> Dictionary:
@@ -57,22 +48,20 @@ func _make_stat_panel(title: String) -> Dictionary:
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var hbox := HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 10)
+	hbox.add_theme_constant_override("separation", 12)
 	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(hbox)
 
 	var title_label := Label.new()
 	title_label.text = title
-	title_label.add_theme_font_size_override("font_size", 12)
-	title_label.add_theme_color_override("font_color", HUD_ORANGE)
+	UiTheme.style_small_caps(title_label, 12)
 	title_label.size_flags_vertical = Control.SIZE_SHRINK_END
 	title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.add_child(title_label)
 
 	var value_label := Label.new()
 	value_label.text = "100"
-	value_label.add_theme_font_size_override("font_size", 34)
-	value_label.add_theme_color_override("font_color", HUD_ORANGE)
+	UiTheme.style_value_label(value_label, 40)
 	value_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.add_child(value_label)
 
@@ -127,24 +116,37 @@ func _build_ammo_panel() -> void:
 	container.add_child(panel)
 
 	var hbox := HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 10)
+	hbox.add_theme_constant_override("separation", 12)
 	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(hbox)
 
 	_weapon_label = Label.new()
 	_weapon_label.text = "PISTOL"
-	_weapon_label.add_theme_font_size_override("font_size", 12)
-	_weapon_label.add_theme_color_override("font_color", HUD_ORANGE)
+	UiTheme.style_small_caps(_weapon_label, 12)
 	_weapon_label.size_flags_vertical = Control.SIZE_SHRINK_END
 	_weapon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.add_child(_weapon_label)
 
 	_ammo_value = Label.new()
-	_ammo_value.text = "18 | 90"
-	_ammo_value.add_theme_font_size_override("font_size", 34)
-	_ammo_value.add_theme_color_override("font_color", HUD_ORANGE)
+	_ammo_value.text = "18"
+	UiTheme.style_value_label(_ammo_value, 40)
 	_ammo_value.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.add_child(_ammo_value)
+
+	# Styled divider between mag and reserve, HL2-style
+	var divider := ColorRect.new()
+	divider.color = Color(UiTheme.ORANGE.r, UiTheme.ORANGE.g, UiTheme.ORANGE.b, 0.35)
+	divider.custom_minimum_size = Vector2(2, 34)
+	divider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	divider.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hbox.add_child(divider)
+
+	_ammo_reserve = Label.new()
+	_ammo_reserve.text = "90"
+	UiTheme.style_value_label(_ammo_reserve, 22, UiTheme.ORANGE_DIM)
+	_ammo_reserve.size_flags_vertical = Control.SIZE_SHRINK_END
+	_ammo_reserve.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hbox.add_child(_ammo_reserve)
 
 
 func _build_crosshair() -> void:
@@ -160,15 +162,19 @@ func _build_crosshair() -> void:
 
 
 func _on_crosshair_draw() -> void:
-	# Small HL2-ish dot + 4 ticks.
-	var c := HUD_ORANGE
-	_crosshair.draw_circle(Vector2.ZERO, 1.5, c)
-	var gap := 4.0
+	# Crisp HL2-ish crosshair: 4 short 1 px ticks + center dot, with a faint
+	# dark under-layer so it stays readable on bright surfaces.
+	var shadow := Color(0, 0, 0, 0.55)
+	var c := Color(HUD_ORANGE.r, HUD_ORANGE.g, HUD_ORANGE.b, 0.95)
+	var gap := 5.0
 	var tick := 4.0
-	_crosshair.draw_line(Vector2(gap, 0), Vector2(gap + tick, 0), c, 1.0)
-	_crosshair.draw_line(Vector2(-gap, 0), Vector2(-gap - tick, 0), c, 1.0)
-	_crosshair.draw_line(Vector2(0, gap), Vector2(0, gap + tick), c, 1.0)
-	_crosshair.draw_line(Vector2(0, -gap), Vector2(0, -gap - tick), c, 1.0)
+	for off in [Vector2(1, 1), Vector2.ZERO]:
+		var col := shadow if off != Vector2.ZERO else c
+		_crosshair.draw_rect(Rect2(Vector2(-1, -1) + off, Vector2(2, 2)), col)
+		_crosshair.draw_rect(Rect2(Vector2(gap, -0.5) + off, Vector2(tick, 1)), col)
+		_crosshair.draw_rect(Rect2(Vector2(-gap - tick, -0.5) + off, Vector2(tick, 1)), col)
+		_crosshair.draw_rect(Rect2(Vector2(-0.5, gap) + off, Vector2(1, tick)), col)
+		_crosshair.draw_rect(Rect2(Vector2(-0.5, -gap - tick) + off, Vector2(1, tick)), col)
 
 
 func _build_vignette() -> void:
@@ -186,8 +192,7 @@ func _build_objective_label() -> void:
 	_objective_label.name = "ObjectiveLabel"
 	_objective_label.text = ""
 	_objective_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_objective_label.add_theme_font_size_override("font_size", 18)
-	_objective_label.add_theme_color_override("font_color", HUD_ORANGE)
+	UiTheme.style_value_label(_objective_label, 19)
 	_objective_label.add_theme_constant_override("outline_size", 4)
 	_objective_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 	_objective_label.anchor_left = 0.2
@@ -284,7 +289,9 @@ func _on_armor_changed(new_armor: float) -> void:
 
 
 func _on_ammo_changed(current: int, reserve: int) -> void:
-	_ammo_value.text = "%d | %d" % [current, reserve]
+	_ammo_value.text = str(current)
+	if _ammo_reserve != null:
+		_ammo_reserve.text = str(reserve)
 
 
 func _on_weapon_changed(weapon_name: String) -> void:

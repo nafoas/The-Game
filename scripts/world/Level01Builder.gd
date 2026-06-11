@@ -229,8 +229,6 @@ func _building(parent: Node, pos: Vector3, size: Vector3, facade_key: String,
 
 
 func _window_grid(parent: Node, bpos: Vector3, bsize: Vector3, face: String) -> void:
-	var glass := SourceMaterials.glass_mat()
-	var lit := SourceMaterials.lit_window_mat()
 	var sill := SourceMaterials.mat("trim")
 
 	var along_z := face == "+x" or face == "-x"
@@ -243,26 +241,43 @@ func _window_grid(parent: Node, bpos: Vector3, bsize: Vector3, face: String) -> 
 		var wy := bpos.y - bsize.y * 0.5 + 1.9 + fl * 3.0
 		for c in range(cols):
 			var t := (c + 0.5) / float(cols) - 0.5
-			var win_pos: Vector3
-			var win_size: Vector3
-			if along_z:
-				var face_x := bpos.x + (bsize.x * 0.5 + 0.05) * (1.0 if face == "+x" else -1.0)
-				win_pos = Vector3(face_x, wy, bpos.z + t * length)
-				win_size = Vector3(0.14, 1.35, 0.95)
-			else:
-				var face_z := bpos.z + (bsize.z * 0.5 + 0.05) * (1.0 if face == "+z" else -1.0)
-				win_pos = Vector3(bpos.x + t * length, wy, face_z)
-				win_size = Vector3(0.95, 1.35, 0.14)
-
 			_lit_window_count += 1
 			var is_lit := (_lit_window_count % 5) == 2
-			_deco(parent, win_pos, win_size, lit if is_lit else glass)
-			# Sill below
-			var sill_size := Vector3(0.22, 0.12, 1.1) if along_z else Vector3(1.1, 0.12, 0.22)
+			var pane := SourceMaterials.window_pane_mat(is_lit)
+
+			var win_pos: Vector3
+			var rot_y: float
+			var sill_size: Vector3
+			if along_z:
+				var face_x := bpos.x + (bsize.x * 0.5 + 0.04) * (1.0 if face == "+x" else -1.0)
+				win_pos = Vector3(face_x, wy, bpos.z + t * length)
+				rot_y = 90.0 if face == "+x" else -90.0
+				sill_size = Vector3(0.18, 0.12, 1.15)
+			else:
+				var face_z := bpos.z + (bsize.z * 0.5 + 0.04) * (1.0 if face == "+z" else -1.0)
+				win_pos = Vector3(bpos.x + t * length, wy, face_z)
+				rot_y = 0.0 if face == "+z" else 180.0
+				sill_size = Vector3(1.15, 0.12, 0.18)
+
+			_window_quad(parent, win_pos, rot_y, Vector2(1.0, 1.4), pane)
+			# Sill below + dark inset frame behind
 			_deco(parent, win_pos + Vector3(0, -0.78, 0), sill_size, sill)
 		# avoid windows colliding with spacing oddities on tiny walls
 		if spacing < 2.0:
 			break
+
+
+func _window_quad(parent: Node, pos: Vector3, rot_y: float, size: Vector2,
+		mat: Material) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = size
+	mi.mesh = quad
+	mi.material_override = mat
+	mi.position = pos
+	mi.rotation_degrees = Vector3(0.0, rot_y, 0.0)
+	parent.add_child(mi)
+	return mi
 
 
 ## Street lamp: pole + arm + industrial bell head model + warm light + cone.
@@ -418,11 +433,7 @@ func _looping_sound(parent: Node, pos: Vector3, path: String, vol_db: float,
 	var stream := load(path) as AudioStream
 	if stream == null:
 		return
-	if stream is AudioStreamWAV:
-		var wav := stream as AudioStreamWAV
-		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
-		wav.loop_begin = 0
-		wav.loop_end = wav.data.size()
+	SourceMaterials.make_wav_loop(stream)
 	var player := AudioStreamPlayer3D.new()
 	player.stream = stream
 	player.volume_db = vol_db
@@ -581,7 +592,7 @@ func _build_street_a() -> void:
 	_building(root, Vector3(-15.0, 4.5, 49.0), Vector3(4.0, 9.0, 20.0), "indust_wall", [], "BldLW")
 
 	# Right side
-	_building(root, Vector3(10.0, 4.0, 22.0), Vector3(6.0, 8.0, 12.0), "plaster_aged", ["-x"], "BldR1")
+	_building(root, Vector3(10.0, 4.0, 22.0), Vector3(6.0, 8.0, 12.0), "concrete_panels", ["-x"], "BldR1")
 	_building(root, Vector3(10.0, 4.0, 36.0), Vector3(6.0, 8.0, 14.0), "concrete_wall_b", ["-x"], "BldR2")
 	_building(root, Vector3(10.0, 4.0, 50.0), Vector3(6.0, 8.0, 10.0), "plaster_gray", ["-x"], "BldR3")
 
@@ -824,9 +835,11 @@ func _build_interior() -> void:
 	if door == null:
 		_csg(root, Vector3(-1.2, 1.35, bz - 6.1), Vector3(0.1, 2.7, 1.1), SourceMaterials.mat("wood_door"))
 
-	# Front windows (lit from inside)
-	_deco(root, Vector3(-3.5, 2.2, bz - 6.25), Vector3(1.4, 1.4, 0.12), SourceMaterials.glass_mat())
-	_deco(root, Vector3(3.5, 2.2, bz - 6.25), Vector3(1.4, 1.4, 0.12), SourceMaterials.lit_window_mat())
+	# Front windows (one lit from inside)
+	_window_quad(root, Vector3(-3.5, 2.2, bz - 6.22), 180.0, Vector2(1.5, 1.5),
+		SourceMaterials.window_pane_mat(false))
+	_window_quad(root, Vector3(3.5, 2.2, bz - 6.22), 180.0, Vector2(1.5, 1.5),
+		SourceMaterials.window_pane_mat(true))
 
 	# Floor / ceiling / second floor slab
 	_csg(root, Vector3(0.0, 0.05, bz), Vector3(10.0, 0.14, 12.0),
@@ -1007,7 +1020,7 @@ func _build_skyline() -> void:
 	add_child(root)
 
 	var sil := StandardMaterial3D.new()
-	sil.albedo_color = Color(0.16, 0.175, 0.2)
+	sil.albedo_color = Color(0.13, 0.14, 0.165)
 	sil.roughness = 1.0
 
 	var lit := SourceMaterials.lit_window_mat()
@@ -1020,7 +1033,7 @@ func _build_skyline() -> void:
 		[26.0, 4.0, 10.0, 19.0, 11.0], [29.0, 26.0, 9.0, 15.0, 10.0],
 		[27.0, 47.0, 11.0, 24.0, 13.0], [30.0, 70.0, 9.0, 14.0, 10.0],
 		[26.0, 93.0, 10.0, 21.0, 11.0], [25.0, 114.0, 9.0, 15.0, 10.0],
-		[-10.0, -20.0, 12.0, 18.0, 9.0], [8.0, -23.0, 14.0, 23.0, 10.0],
+		[-12.0, -34.0, 14.0, 18.0, 9.0], [9.0, -38.0, 16.0, 23.0, 10.0], [-1.0, -45.0, 12.0, 27.0, 10.0],
 		[-2.0, 126.0, 13.0, 22.0, 10.0], [12.0, 124.0, 10.0, 16.0, 9.0],
 		[-14.0, 124.0, 9.0, 13.0, 9.0],
 	]

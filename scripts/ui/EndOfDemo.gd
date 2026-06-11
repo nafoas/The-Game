@@ -38,6 +38,7 @@ func _build_ui() -> void:
 
 	var title := _add_line(vbox, "END OF DEMO", 64, ORANGE)
 	title.name = "TitleLabel"
+	UiTheme.style_title(title, 64)
 
 	_add_line(vbox, "Joe Biden remains at large.", 24, Color(0.9, 0.9, 0.9))
 	_add_line(vbox, "Thank you for playing — HUNT DOWN JOE BIDEN", 20, Color(0.85, 0.85, 0.85))
@@ -64,7 +65,13 @@ func _build_ui() -> void:
 	_continue_btn.add_theme_color_override("font_color", Color(0.92, 0.92, 0.92))
 	_continue_btn.add_theme_color_override("font_hover_color", ORANGE)
 	_continue_btn.add_theme_color_override("font_pressed_color", ORANGE)
+	_continue_btn.add_theme_color_override("font_shadow_color", UiTheme.SHADOW)
+	_continue_btn.add_theme_constant_override("shadow_offset_x", 2)
+	_continue_btn.add_theme_constant_override("shadow_offset_y", 2)
 	_continue_btn.modulate = Color(1, 1, 1, 0)
+	_continue_btn.mouse_entered.connect(func() -> void:
+		AudioManager.play_sfx("res://sounds/ui/buttonrollover.wav", -16.0)
+	)
 	_continue_btn.pressed.connect(_on_continue)
 	vbox.add_child(_continue_btn)
 
@@ -80,6 +87,9 @@ func _add_line(parent: Control, text: String, size: int, color: Color) -> Label:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", size)
 	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_shadow_color", UiTheme.SHADOW)
+	label.add_theme_constant_override("shadow_offset_x", 2)
+	label.add_theme_constant_override("shadow_offset_y", 2)
 	parent.add_child(label)
 	return label
 

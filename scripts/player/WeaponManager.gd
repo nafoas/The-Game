@@ -24,6 +24,12 @@ const WEAPON_DEFS: Dictionary = {
 			"res://sounds/weapons/alyx_gun/alyx_gun_fire3.wav",
 			"res://sounds/weapons/alyx_gun/alyx_gun_fire4.wav",
 		],
+		# Viewmodel: real HL2 world model held under the camera
+		"model": "res://models/weapons/w_alyx_gun.mdl",
+		"model_pos": Vector3(0.0, 0.13, 0.08),
+		"model_rot": Vector3(0.0, 180.0, 0.0),
+		"model_scale": 1.5,
+		"muzzle_z": -0.32,
 	},
 	"mp5": {
 		"damage": 8.0,
@@ -37,6 +43,11 @@ const WEAPON_DEFS: Dictionary = {
 			"res://sounds/weapons/alyx_gun/alyx_gun_fire5.wav",
 			"res://sounds/weapons/alyx_gun/alyx_gun_fire6.wav",
 		],
+		"model": "res://models/weapons/w_combine_sniper.mdl",
+		"model_pos": Vector3(0.0, 0.02, 0.1),
+		"model_rot": Vector3(0.0, 90.0, 0.0),
+		"model_scale": 1.0,
+		"muzzle_z": -0.75,
 	},
 }
 
@@ -57,10 +68,13 @@ var _reloading: bool = false
 var _reload_timer: float = 0.0
 
 var _viewmodel: Node3D = null
-var _viewmodel_base_pos := Vector3(0.25, -0.2, -0.5)
+var _gun_holder: Node3D = null
+var _viewmodel_base_pos := Vector3(0.27, -0.22, -0.5)
 var _recoil_z: float = 0.0
 var _sway := Vector2.ZERO
 var _mouse_accum := Vector2.ZERO
+var _bob_time: float = 0.0
+var _bloom: float = 0.0
 
 var _muzzle_light: OmniLight3D = null
 var _muzzle_quad: MeshInstance3D = null
@@ -119,48 +133,92 @@ func _build_viewmodel() -> void:
 	_viewmodel.position = _viewmodel_base_pos
 	add_child(_viewmodel)
 
-	var gun := MeshInstance3D.new()
-	gun.name = "GunMesh"
-	var box := BoxMesh.new()
-	box.size = Vector3(0.08, 0.08, 0.35)
-	gun.mesh = box
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.18, 0.18, 0.2)
-	mat.metallic = 0.6
-	mat.roughness = 0.4
-	gun.material_override = mat
-	gun.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_viewmodel.add_child(gun)
+	_gun_holder = Node3D.new()
+	_gun_holder.name = "GunHolder"
+	_viewmodel.add_child(_gun_holder)
 
-	# Muzzle flash light + quad at the barrel tip.
+	# Muzzle flash: a SMALL, short-lived additive quad + weak light. Positioned
+	# per weapon in _refresh_viewmodel; must never wash out the whole screen.
 	_muzzle_light = OmniLight3D.new()
 	_muzzle_light.name = "MuzzleLight"
-	_muzzle_light.position = Vector3(0.0, 0.0, -0.25)
-	_muzzle_light.light_color = Color(1.0, 0.8, 0.4)
-	_muzzle_light.light_energy = 3.0
-	_muzzle_light.omni_range = 4.0
+	_muzzle_light.position = Vector3(0.0, 0.0, -0.3)
+	_muzzle_light.light_color = Color(1.0, 0.82, 0.5)
+	_muzzle_light.light_energy = 0.7
+	_muzzle_light.omni_range = 2.6
+	_muzzle_light.omni_attenuation = 1.6
 	_muzzle_light.visible = false
 	_viewmodel.add_child(_muzzle_light)
 
 	_muzzle_quad = MeshInstance3D.new()
 	_muzzle_quad.name = "MuzzleQuad"
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.12, 0.12)
+	quad.size = Vector2(0.06, 0.06)
 	_muzzle_quad.mesh = quad
 	var qmat := StandardMaterial3D.new()
 	qmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	qmat.albedo_color = Color(1.0, 0.85, 0.4, 0.9)
+	qmat.albedo_color = Color(1.0, 0.78, 0.35, 0.55)
 	qmat.emission_enabled = true
-	qmat.emission = Color(1.0, 0.7, 0.2)
-	qmat.emission_energy_multiplier = 4.0
+	qmat.emission = Color(1.0, 0.72, 0.3)
+	qmat.emission_energy_multiplier = 1.2
 	qmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	qmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	qmat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	qmat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	_muzzle_quad.material_override = qmat
-	_muzzle_quad.position = Vector3(0.0, 0.0, -0.28)
+	_muzzle_quad.position = Vector3(0.0, 0.0, -0.32)
 	_muzzle_quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_muzzle_quad.visible = false
 	_viewmodel.add_child(_muzzle_quad)
+
+	_refresh_viewmodel()
+
+
+## Swap the held model to match the current weapon (real MDL, box fallback).
+func _refresh_viewmodel() -> void:
+	if _gun_holder == null:
+		return
+	for child in _gun_holder.get_children():
+		child.queue_free()
+
+	var def: Dictionary = WEAPON_DEFS.get(current_weapon_name, {})
+	var model_path: String = def.get("model", "")
+	var spawned: Node3D = null
+	if model_path != "":
+		spawned = SourceMaterials.spawn_model(_gun_holder, model_path,
+			def.get("model_pos", Vector3.ZERO), 0.0, def.get("model_scale", 1.27), true)
+		if spawned != null:
+			spawned.rotation_degrees = def.get("model_rot", Vector3.ZERO)
+			_disable_shadows(spawned)
+
+	if spawned == null:
+		var gun := MeshInstance3D.new()
+		gun.name = "GunMeshFallback"
+		var box := BoxMesh.new()
+		box.size = Vector3(0.08, 0.08, 0.35)
+		gun.mesh = box
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.18, 0.18, 0.2)
+		mat.metallic = 0.6
+		mat.roughness = 0.4
+		gun.material_override = mat
+		gun.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_gun_holder.add_child(gun)
+
+	var muzzle_z: float = def.get("muzzle_z", -0.3)
+	if _muzzle_light != null:
+		_muzzle_light.position = Vector3(0.0, 0.06, muzzle_z)
+	if _muzzle_quad != null:
+		_muzzle_quad.position = Vector3(0.0, 0.06, muzzle_z - 0.02)
+
+
+func _disable_shadows(node: Node) -> void:
+	var stack: Array = [node]
+	while stack.size() > 0:
+		var n: Node = stack.pop_back()
+		if n is GeometryInstance3D:
+			(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		for child in n.get_children():
+			stack.append(child)
 
 
 # ---------------------------------------------------------------------------
@@ -237,8 +295,9 @@ func _equip(weapon_name: String) -> void:
 	_reloading = false
 	_reload_timer = 0.0
 	if changed and _viewmodel != null:
-		# Quick draw dip.
+		# Quick draw dip + swap the held model.
 		_viewmodel.position = _viewmodel_base_pos + Vector3(0.0, -0.15, 0.0)
+		_refresh_viewmodel()
 	weapon_changed.emit(current_weapon_name)
 	_emit_ammo()
 
@@ -314,20 +373,23 @@ func _fire_shot(def: Dictionary) -> void:
 	if not snd.is_empty():
 		_play_local_sound(snd)
 
-	# Muzzle flash
-	_muzzle_timer = 0.05
+	# Muzzle flash — tiny and brief
+	_muzzle_timer = 0.04
 	_muzzle_light.visible = true
 	_muzzle_quad.visible = true
+	_muzzle_quad.rotation.z = randf_range(0.0, TAU)
+	_muzzle_quad.scale = Vector3.ONE * randf_range(0.8, 1.25)
 
-	# Recoil
+	# Recoil + spread bloom
 	_recoil_z = minf(_recoil_z + 0.04, 0.12)
+	_bloom = minf(_bloom + 0.004, 0.02)
 	if _camera != null:
 		_camera.rotation.x += deg_to_rad(0.4)
 
 	# Hitscan ray with random cone spread
 	if _camera == null:
 		return
-	var spread := float(def["spread"])
+	var spread := float(def["spread"]) + _bloom
 	var forward := -_camera.global_transform.basis.z
 	var right := _camera.global_transform.basis.x
 	var up := _camera.global_transform.basis.y
@@ -370,36 +432,62 @@ func _spawn_impact(pos: Vector3, normal: Vector3) -> void:
 	scene_root.add_child(impact)
 	impact.global_position = pos
 
-	# Spark/dust particles
-	var particles := CPUParticles3D.new()
-	particles.amount = 8
-	particles.one_shot = true
-	particles.lifetime = 0.4
-	particles.explosiveness = 1.0
-	particles.direction = normal
-	particles.spread = 35.0
-	particles.initial_velocity_min = 1.0
-	particles.initial_velocity_max = 2.5
-	particles.gravity = Vector3(0, -6.0, 0)
-	particles.scale_amount_min = 0.02
-	particles.scale_amount_max = 0.05
-	var pmesh := BoxMesh.new()
-	pmesh.size = Vector3(0.02, 0.02, 0.02)
-	var pmat := StandardMaterial3D.new()
-	pmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	pmat.albedo_color = Color(0.85, 0.75, 0.5)
-	pmesh.material = pmat
-	particles.mesh = pmesh
-	particles.emitting = true
-	impact.add_child(particles)
+	# Dust puff
+	var dust := CPUParticles3D.new()
+	dust.amount = 6
+	dust.one_shot = true
+	dust.lifetime = 0.55
+	dust.explosiveness = 1.0
+	dust.direction = normal
+	dust.spread = 50.0
+	dust.initial_velocity_min = 0.4
+	dust.initial_velocity_max = 1.1
+	dust.gravity = Vector3(0, -0.6, 0)
+	dust.scale_amount_min = 0.05
+	dust.scale_amount_max = 0.14
+	var dquad := QuadMesh.new()
+	dquad.size = Vector2(1.0, 1.0)
+	var dustmat := StandardMaterial3D.new()
+	dustmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dustmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dustmat.albedo_color = Color(0.55, 0.52, 0.46, 0.4)
+	dustmat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	dquad.material = dustmat
+	dust.mesh = dquad
+	dust.emitting = true
+	impact.add_child(dust)
 
-	# Dark decal-ish quad facing the surface normal
+	# Brief sparks
+	var sparks := CPUParticles3D.new()
+	sparks.amount = 5
+	sparks.one_shot = true
+	sparks.lifetime = 0.25
+	sparks.explosiveness = 1.0
+	sparks.direction = normal
+	sparks.spread = 40.0
+	sparks.initial_velocity_min = 2.0
+	sparks.initial_velocity_max = 4.0
+	sparks.gravity = Vector3(0, -9.0, 0)
+	sparks.scale_amount_min = 0.012
+	sparks.scale_amount_max = 0.03
+	var smesh := QuadMesh.new()
+	smesh.size = Vector2(1.0, 1.0)
+	var smat := StandardMaterial3D.new()
+	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	smat.albedo_color = Color(1.0, 0.85, 0.45)
+	smat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	smesh.material = smat
+	sparks.mesh = smesh
+	sparks.emitting = true
+	impact.add_child(sparks)
+
+	# Subtle dark bullet-hole decal facing the surface normal
 	var decal := MeshInstance3D.new()
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.2, 0.2)
+	quad.size = Vector2(0.11, 0.11)
 	decal.mesh = quad
 	var dmat := StandardMaterial3D.new()
-	dmat.albedo_color = Color(0.05, 0.05, 0.05, 0.85)
+	dmat.albedo_color = Color(0.04, 0.04, 0.04, 0.6)
 	dmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	dmat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	dmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -443,12 +531,24 @@ func _update_viewmodel(delta: float) -> void:
 	_sway = _sway.lerp(_mouse_accum.limit_length(40.0), 10.0 * delta)
 	_mouse_accum = _mouse_accum.lerp(Vector2.ZERO, 12.0 * delta)
 
-	var sway_offset := Vector3(-_sway.x * 0.0012, _sway.y * 0.0012, 0.0)
-	var target := _viewmodel_base_pos + sway_offset + Vector3(0.0, 0.0, _recoil_z)
-	_viewmodel.position = _viewmodel.position.lerp(target, 12.0 * delta)
+	# Weapon bob synced to player movement (figure-8, HL2 style).
+	var bob_offset := Vector3.ZERO
+	if _player != null and _player.is_on_floor():
+		var hspeed := Vector2(_player.velocity.x, _player.velocity.z).length()
+		if hspeed > 0.5:
+			_bob_time += delta * hspeed * 1.6
+			bob_offset = Vector3(sin(_bob_time * 0.5) * 0.008, -absf(sin(_bob_time)) * 0.009, 0.0)
+		else:
+			_bob_time = 0.0
 
-	# Recoil recovery
+	var sway_offset := Vector3(-_sway.x * 0.0012, _sway.y * 0.0012, 0.0)
+	var target := _viewmodel_base_pos + sway_offset + bob_offset + Vector3(0.0, 0.0, _recoil_z)
+	_viewmodel.position = _viewmodel.position.lerp(target, 12.0 * delta)
+	_viewmodel.rotation.z = lerpf(_viewmodel.rotation.z, -_sway.x * 0.0006, 10.0 * delta)
+
+	# Recoil + bloom recovery
 	_recoil_z = lerpf(_recoil_z, 0.0, 9.0 * delta)
+	_bloom = maxf(_bloom - delta * 0.03, 0.0)
 	if _camera != null:
 		_camera.rotation.x = lerpf(_camera.rotation.x, 0.0, 9.0 * delta)
 

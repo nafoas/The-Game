@@ -8,6 +8,7 @@ const LEVEL_SCENE := "res://scenes/level/level_01.tscn"
 
 var _camera: Camera3D = null
 var _flicker_light: OmniLight3D = null
+var _searchlight: SpotLight3D = null
 var _fade_rect: ColorRect = null
 var _skip_label: Label = null
 var _time: float = 0.0
@@ -35,10 +36,14 @@ func _build_environment() -> void:
 	var world_env := WorldEnvironment.new()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.05, 0.06, 0.09)
+	env.background_color = Color(0.07, 0.08, 0.11)
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.25, 0.27, 0.33)
-	env.fog_density = 0.04
+	env.fog_light_color = Color(0.18, 0.2, 0.26)
+	env.fog_density = 0.035
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.glow_enabled = true
+	env.glow_intensity = 0.4
+	env.glow_bloom = 0.08
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.25, 0.25, 0.3)
 	env.ambient_light_energy = 0.4
@@ -63,40 +68,58 @@ func _add_box(pos: Vector3, size: Vector3, color: Color, emissive: bool = false)
 
 
 func _build_transport_interior() -> void:
-	var hull := Color(0.12, 0.13, 0.14)
-	var dark := Color(0.08, 0.08, 0.09)
+	var hull := SourceMaterials.mat("metal")
+	var hull_rusty := SourceMaterials.mat("metal_rusty")
+	var floor_mat := SourceMaterials.mat("metal_door")
 
 	# Floor / ceiling / walls of the transport bay (about 3 x 2.4 x 6 m)
-	_add_box(Vector3(0, 0, 0), Vector3(3.0, 0.1, 6.0), dark)            # floor
-	_add_box(Vector3(0, 2.4, 0), Vector3(3.0, 0.1, 6.0), hull)          # ceiling
-	_add_box(Vector3(0, 1.2, -3.0), Vector3(3.0, 2.4, 0.1), hull)       # front bulkhead
-	_add_box(Vector3(0, 1.2, 3.0), Vector3(3.0, 2.4, 0.1), hull)        # rear ramp
-	_add_box(Vector3(1.5, 0.5, 0), Vector3(0.1, 1.0, 6.0), hull)        # right wall lower
-	_add_box(Vector3(1.5, 2.1, 0), Vector3(0.1, 0.8, 6.0), hull)        # right wall upper
-	_add_box(Vector3(-1.5, 1.2, 0), Vector3(0.1, 2.4, 6.0), hull)       # left wall (solid)
+	_add_tex_box(Vector3(0, 0, 0), Vector3(3.0, 0.1, 6.0), floor_mat)       # floor
+	_add_tex_box(Vector3(0, 2.4, 0), Vector3(3.0, 0.1, 6.0), hull)          # ceiling
+	_add_tex_box(Vector3(0, 1.2, -3.0), Vector3(3.0, 2.4, 0.1), hull)       # front bulkhead
+	_add_tex_box(Vector3(0, 1.2, 3.0), Vector3(3.0, 2.4, 0.1), hull_rusty)  # rear ramp
+	_add_tex_box(Vector3(1.5, 0.5, 0), Vector3(0.1, 1.0, 6.0), hull)        # right wall lower
+	_add_tex_box(Vector3(1.5, 2.1, 0), Vector3(0.1, 0.8, 6.0), hull)        # right wall upper
+	_add_tex_box(Vector3(-1.5, 1.2, 0), Vector3(0.1, 2.4, 6.0), hull)       # left wall (solid)
 
-	# Window strip on the right wall (between the lower and upper sections),
-	# emissive haze-gray so the skyline silhouettes read against it.
-	_add_box(Vector3(1.5, 1.35, 0), Vector3(0.04, 0.7, 5.6), Color(0.35, 0.38, 0.45), true)
+	# Ribbing along the hull so the walls aren't flat
+	for rz in [-2.2, -0.8, 0.6, 2.0]:
+		_add_tex_box(Vector3(-1.43, 1.2, rz), Vector3(0.06, 2.3, 0.12), hull_rusty)
+		_add_tex_box(Vector3(0.0, 2.34, rz), Vector3(2.9, 0.06, 0.12), hull_rusty)
+
+	# Window strip on the right wall — translucent, so the skyline reads through.
+	var strip := CSGBox3D.new()
+	strip.size = Vector3(0.04, 0.7, 5.6)
+	strip.position = Vector3(1.5, 1.35, 0)
+	var smat := StandardMaterial3D.new()
+	smat.albedo_color = Color(0.45, 0.5, 0.6, 0.22)
+	smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	strip.material = smat
+	add_child(strip)
 
 	# Bench seats along both walls
 	_add_box(Vector3(-1.1, 0.45, 0), Vector3(0.7, 0.08, 5.2), Color(0.18, 0.2, 0.18))
 	_add_box(Vector3(1.1, 0.45, 0), Vector3(0.7, 0.08, 5.2), Color(0.18, 0.2, 0.18))
 
-	# Crates strapped at the front
-	_add_box(Vector3(-0.6, 0.35, -2.4), Vector3(0.6, 0.6, 0.6), Color(0.25, 0.22, 0.15))
-	_add_box(Vector3(0.2, 0.3, -2.5), Vector3(0.5, 0.5, 0.5), Color(0.22, 0.2, 0.14))
+	# Real cargo strapped at the front
+	var crate := SourceMaterials.spawn_model(self, "res://models/props_forest/footlocker01_closed.mdl",
+		Vector3(-0.6, 0.4, -2.4), 12.0)
+	if crate == null:
+		_add_box(Vector3(-0.6, 0.35, -2.4), Vector3(0.6, 0.6, 0.6), Color(0.25, 0.22, 0.15))
+	SourceMaterials.spawn_model(self, "res://models/items/ammocrate_pistol.mdl",
+		Vector3(0.3, 0.46, -2.5), -8.0)
+	SourceMaterials.spawn_model(self, "res://models/props_junk/propane_tank001a.mdl",
+		Vector3(0.95, 0.55, -2.6), 0.0)
 
-	# Seated silhouette marines (capsule stand-ins)
-	for z in [-1.6, -0.4, 0.8]:
-		var marine := CSGCylinder3D.new()
-		marine.radius = 0.22
-		marine.height = 1.0
-		marine.position = Vector3(-1.1, 0.95, z)
-		var mmat := StandardMaterial3D.new()
-		mmat.albedo_color = Color(0.1, 0.11, 0.1)
-		marine.material = mmat
-		add_child(marine)
+	# Squadmates riding along — real soldier silhouettes in the gloom
+	var marine_a := SourceMaterials.spawn_model(self, "res://models/barney.mdl",
+		Vector3(-1.0, 0.1, -1.4), 75.0, 1.27, true)
+	if marine_a == null:
+		_marine_capsule(Vector3(-1.1, 0.95, -1.6))
+	var marine_b := SourceMaterials.spawn_model(self, "res://models/eli.mdl",
+		Vector3(-0.95, 0.1, 0.9), 100.0, 1.27, true)
+	if marine_b == null:
+		_marine_capsule(Vector3(-1.1, 0.95, 0.8))
 
 	# Dim flickering interior light
 	_flicker_light = OmniLight3D.new()
@@ -105,6 +128,35 @@ func _build_transport_interior() -> void:
 	_flicker_light.light_energy = 0.9
 	_flicker_light.omni_range = 6.0
 	add_child(_flicker_light)
+
+	# Red standby lamp at the rear ramp
+	var ramp_light := OmniLight3D.new()
+	ramp_light.position = Vector3(0, 2.1, 2.6)
+	ramp_light.light_color = Color(1.0, 0.2, 0.15)
+	ramp_light.light_energy = 0.7
+	ramp_light.omni_range = 3.0
+	add_child(ramp_light)
+	_add_box(Vector3(0, 2.25, 2.93), Vector3(0.18, 0.08, 0.08), Color(1.0, 0.25, 0.2), true)
+
+
+func _marine_capsule(pos: Vector3) -> void:
+	var marine := CSGCylinder3D.new()
+	marine.radius = 0.22
+	marine.height = 1.0
+	marine.position = pos
+	var mmat := StandardMaterial3D.new()
+	mmat.albedo_color = Color(0.1, 0.11, 0.1)
+	marine.material = mmat
+	add_child(marine)
+
+
+func _add_tex_box(pos: Vector3, size: Vector3, mat: Material) -> CSGBox3D:
+	var box := CSGBox3D.new()
+	box.size = size
+	box.position = pos
+	box.material = mat
+	add_child(box)
+	return box
 
 
 func _build_skyline() -> void:
@@ -121,9 +173,26 @@ func _build_skyline() -> void:
 	for bd in positions:
 		_add_box(bd[0], bd[1], sil)
 
-	# A couple of lit windows in the skyline
-	for p in [Vector3(9.55, 2.8, -2.0), Vector3(7.45, 1.8, 2.0), Vector3(10.45, 4.5, 5.0)]:
-		_add_box(p, Vector3(0.1, 0.3, 0.3), Color(0.9, 0.7, 0.3), true)
+	# Scattered lit windows glowing through the haze
+	var lit_positions := [
+		Vector3(9.55, 2.8, -2.0), Vector3(9.55, 4.1, -2.4), Vector3(7.45, 1.8, 2.0),
+		Vector3(10.45, 4.5, 5.0), Vector3(10.45, 2.9, 5.6), Vector3(6.45, 2.6, -6.2),
+		Vector3(9.95, 3.2, 9.0),
+	]
+	for p in lit_positions:
+		_add_box(p, Vector3(0.1, 0.3, 0.3), Color(0.95, 0.7, 0.3), true)
+
+	# Sweeping searchlight far off in the city
+	var search := SpotLight3D.new()
+	search.name = "Searchlight"
+	search.position = Vector3(18.0, 1.0, -10.0)
+	search.rotation_degrees = Vector3(35.0, 90.0, 0.0)
+	search.light_color = Color(0.7, 0.8, 1.0)
+	search.light_energy = 2.5
+	search.spot_range = 40.0
+	search.spot_angle = 6.0
+	add_child(search)
+	_searchlight = search
 
 
 func _build_camera() -> void:
@@ -252,6 +321,9 @@ func _process(delta: float) -> void:
 		if randf() < 0.01:
 			flicker *= 0.3  # occasional hard drop
 		_flicker_light.light_energy = clampf(flicker, 0.2, 1.2)
+
+	if _searchlight != null:
+		_searchlight.rotation_degrees.y = 90.0 + sin(_time * 0.35) * 30.0
 
 
 # ---------------------------------------------------------------------------

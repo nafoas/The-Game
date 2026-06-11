@@ -78,8 +78,10 @@ func _run() -> void:
 	await _wait(0.5)
 	await _shot("10_plaza")
 
-	# Interior.
-	await _teleport(player, Vector3(8, 1.2, 90), 180.0)
+	# Interior — stand inside the radio shack looking at the radio corner.
+	await _teleport(player, Vector3(-2.5, 1.2, 83.5), 0.0)
+	_face_point(player, Vector3(2.4, 1.0, 92.0))
+	await _wait(0.5)
 	await _shot("11_interior")
 
 	# End area / safehouse.

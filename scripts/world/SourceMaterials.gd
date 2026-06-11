@@ -18,7 +18,7 @@ const PALETTE := {
 	"road": {
 		"texture": "res://materials/concrete/concretefloor039a.vtf",
 		"normal": "res://materials/concrete/concretefloor039a_normal.vtf",
-		"tile_m": 3.2, "roughness": 0.95, "tint": Color(0.62, 0.62, 0.64),
+		"tile_m": 2.8, "roughness": 0.95, "tint": Color(0.78, 0.78, 0.8),
 	},
 	"sidewalk": {
 		"texture": "res://materials/concrete/concretefloor033a.vtf",
@@ -67,7 +67,11 @@ const PALETTE := {
 	},
 	"plaster_aged": {
 		"texture": "res://materials/plaster/plasterwall052a.vtf",
-		"tile_m": 2.56, "roughness": 0.92,
+		"tile_m": 2.56, "roughness": 0.92, "tint": Color(0.88, 0.88, 0.86),
+	},
+	"concrete_panels": {
+		"texture": "res://materials/concrete/ep2_concretewall01c.vtf",
+		"tile_m": 2.56, "roughness": 0.93,
 	},
 	"brick_inn": {
 		"texture": "res://materials/concrete/concretewall_inn01a.vtf",
@@ -213,35 +217,56 @@ static func mat(key: String, fallback := Color(0.5, 0.5, 0.5)) -> Material:
 	return m
 
 
-## Dark window glass (slightly reflective, unlit interior look).
+## Dark window glass (subtle, near-black with faint sheen).
 static func glass_mat() -> StandardMaterial3D:
 	if _glass_mat != null:
 		return _glass_mat
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.04, 0.055, 0.08)
-	m.roughness = 0.12
-	m.metallic = 0.6
-	m.metallic_specular = 0.7
+	m.albedo_color = Color(0.03, 0.04, 0.055)
+	m.roughness = 0.3
+	m.metallic = 0.2
+	m.metallic_specular = 0.5
 	_glass_mat = m
 	return m
 
 
-## Warm emissive window pane for far/lit windows.
+static var _window_pane_mats: Dictionary = {}
+
+## Industrial multi-pane window material using the real ep2 window texture.
+## Plain UV (meant for QuadMesh windows, one texture per pane). `lit` adds a
+## warm interior glow.
+static func window_pane_mat(lit_pane: bool) -> StandardMaterial3D:
+	var key := "lit" if lit_pane else "dark"
+	if _window_pane_mats.has(key):
+		return _window_pane_mats[key]
+	var m := StandardMaterial3D.new()
+	var t := tex("res://materials/glass/ep2_window01.vtf")
+	if t != null:
+		m.albedo_texture = t
+	if lit_pane:
+		m.albedo_color = Color(1.0, 0.95, 0.85)
+		m.emission_enabled = true
+		m.emission = Color(0.9, 0.62, 0.28)
+		m.emission_energy_multiplier = 1.1
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	else:
+		m.albedo_color = Color(0.5, 0.54, 0.6)
+		m.roughness = 0.35
+		m.metallic = 0.25
+	_window_pane_mats[key] = m
+	return m
+
+
+## Warm emissive pane for far skyline windows (no texture detail needed).
 static func lit_window_mat() -> StandardMaterial3D:
 	if _lit_window_mat != null:
 		return _lit_window_mat
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.55, 0.42, 0.2)
+	m.albedo_color = Color(0.9, 0.66, 0.3)
 	m.emission_enabled = true
 	m.emission = Color(1.0, 0.72, 0.35)
-	m.emission_energy_multiplier = 1.6
+	m.emission_energy_multiplier = 1.4
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	var t := tex("res://materials/glass/ep2_window01.vtf")
-	if t != null:
-		m.albedo_texture = t
-		m.uv1_triplanar = true
-		m.uv1_world_triplanar = true
-		m.uv1_scale = Vector3.ONE * 0.8
 	_lit_window_mat = m
 	return m
 
@@ -297,6 +322,26 @@ static func _strip_bodies(node: Node) -> void:
 
 
 # ---------------------------------------------------------------------------
+# Audio helper
+# ---------------------------------------------------------------------------
+
+## Force a WAV stream to loop (imported WAVs default to one-shot).
+## loop_end is in FRAMES, so account for bit depth and channel count.
+static func make_wav_loop(stream: AudioStream) -> void:
+	if stream is AudioStreamWAV:
+		var wav := stream as AudioStreamWAV
+		var bytes_per_sample := 2 if wav.format == AudioStreamWAV.FORMAT_16_BITS else 1
+		if wav.format == AudioStreamWAV.FORMAT_IMA_ADPCM:
+			bytes_per_sample = 1  # approximation; ADPCM is 4-bit but loop still works
+		var channels := 2 if wav.stereo else 1
+		wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		wav.loop_begin = 0
+		wav.loop_end = int(wav.data.size() / float(bytes_per_sample * channels))
+	else:
+		stream.set("loop", true)
+
+
+# ---------------------------------------------------------------------------
 # Dressing utilities
 # ---------------------------------------------------------------------------
 
@@ -349,7 +394,7 @@ static func add_dust_motes(parent: Node, pos: Vector3, extents: Vector3,
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	m.albedo_color = Color(0.9, 0.85, 0.7, 0.18)
-	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	mesh.material = m
 	p.mesh = mesh
 	p.position = pos

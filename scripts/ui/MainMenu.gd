@@ -26,8 +26,10 @@ func _ready() -> void:
 		_ui.name = "UI"
 		add_child(_ui)
 
+	UiTheme.add_menu_backplate(_ui)
 	_build_title()
 	_build_buttons()
+	_build_version_label()
 	_build_options_panel()
 
 
@@ -38,35 +40,33 @@ func _ready() -> void:
 func _build_title() -> void:
 	var title := Label.new()
 	title.name = "Title"
-	title.text = "HUNT DOWN JOE BIDEN"
-	title.add_theme_font_size_override("font_size", 52)
-	title.add_theme_color_override("font_color", TITLE_COLOR)
-	title.add_theme_constant_override("outline_size", 6)
-	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
-	var fv := FontVariation.new()
-	fv.base_font = ThemeDB.fallback_font
-	fv.spacing_glyph = 3
-	title.add_theme_font_override("font", fv)
-	title.position = Vector2(64, 64)
+	title.text = "HUNT DOWN"
+	UiTheme.style_title(title, 54)
+	title.position = Vector2(64, 56)
 	_ui.add_child(title)
+
+	# Second line bigger, HL2 "orange box" hierarchy
+	var title2 := Label.new()
+	title2.name = "Title2"
+	title2.text = "JOE BIDEN"
+	UiTheme.style_title(title2, 68, Color(0.95, 0.95, 0.95))
+	title2.position = Vector2(64, 110)
+	_ui.add_child(title2)
 
 	var subtitle := Label.new()
 	subtitle.name = "Subtitle"
-	subtitle.text = "A Source-Style Parody — DEMO"
-	subtitle.add_theme_font_size_override("font_size", 16)
-	subtitle.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
-	subtitle.add_theme_constant_override("outline_size", 3)
-	subtitle.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
-	subtitle.position = Vector2(66, 130)
+	subtitle.text = "A SOURCE-STYLE PARODY"
+	UiTheme.style_small_caps(subtitle, 15)
+	subtitle.position = Vector2(67, 188)
 	_ui.add_child(subtitle)
 
 
 func _build_buttons() -> void:
 	_buttons_box = VBoxContainer.new()
 	_buttons_box.name = "MenuButtons"
-	_buttons_box.add_theme_constant_override("separation", 14)
-	_buttons_box.anchor_top = 0.45
-	_buttons_box.anchor_bottom = 0.45
+	_buttons_box.add_theme_constant_override("separation", 10)
+	_buttons_box.anchor_top = 0.46
+	_buttons_box.anchor_bottom = 0.46
 	_buttons_box.offset_left = 66.0
 	_buttons_box.offset_right = 380.0
 	_ui.add_child(_buttons_box)
@@ -76,27 +76,31 @@ func _build_buttons() -> void:
 	_add_menu_button("QUIT", _on_quit)
 
 
+func _build_version_label() -> void:
+	var version := Label.new()
+	version.name = "VersionLabel"
+	version.text = "Demo build 0.1 — Godot 4 / Source asset parody"
+	version.add_theme_font_size_override("font_size", 12)
+	version.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55, 0.8))
+	version.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	version.add_theme_constant_override("shadow_offset_x", 1)
+	version.add_theme_constant_override("shadow_offset_y", 1)
+	version.anchor_top = 1.0
+	version.anchor_bottom = 1.0
+	version.offset_left = 18.0
+	version.offset_top = -28.0
+	_ui.add_child(version)
+
+
 func _add_menu_button(text: String, callback: Callable) -> Button:
-	var btn := Button.new()
-	btn.text = text
-	btn.flat = true
-	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	btn.focus_mode = Control.FOCUS_NONE
-	btn.add_theme_font_size_override("font_size", 28)
-	btn.add_theme_color_override("font_color", BTN_NORMAL)
-	btn.add_theme_color_override("font_hover_color", BTN_HOVER)
-	btn.add_theme_color_override("font_pressed_color", BTN_HOVER)
-	btn.add_theme_color_override("font_hover_pressed_color", BTN_HOVER)
-	btn.add_theme_color_override("font_focus_color", BTN_NORMAL)
-	btn.mouse_entered.connect(func() -> void:
-		AudioManager.play_sfx(HOVER_SOUND, -6.0)
+	var parts := UiTheme.make_menu_button(text, 28,
+		func() -> void: AudioManager.play_sfx(HOVER_SOUND, -16.0),
+		func() -> void:
+			AudioManager.play_sfx(CLICK_SOUND, -8.0)
+			callback.call()
 	)
-	btn.pressed.connect(func() -> void:
-		AudioManager.play_sfx(CLICK_SOUND)
-		callback.call()
-	)
-	_buttons_box.add_child(btn)
-	return btn
+	_buttons_box.add_child(parts["wrap"])
+	return parts["button"]
 
 
 func _build_options_panel() -> void:
