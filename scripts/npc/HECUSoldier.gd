@@ -30,12 +30,10 @@ func _start_briefing() -> void:
 		5.0,
 		"Commander"
 	)
-	var brief_path := "res://voice/commander/briefing_01.mp3"
-	if ResourceLoader.exists(brief_path):
-		var stream := ResourceLoader.load(brief_path) as AudioStream
-		if stream != null and _audio != null:
-			_audio.stream = stream
-			_audio.play()
+	var stream := AudioManager.load_stream("res://voice/commander/briefing_01.mp3")
+	if stream != null and _audio != null:
+		_audio.stream = stream
+		_audio.play()
 
 	await get_tree().create_timer(6.0).timeout
 	_start_talking(4.0)
@@ -44,12 +42,10 @@ func _start_briefing() -> void:
 		4.0,
 		"Commander"
 	)
-	var brief2_path := "res://voice/commander/briefing_02.mp3"
-	if ResourceLoader.exists(brief2_path):
-		var stream2 := ResourceLoader.load(brief2_path) as AudioStream
-		if stream2 != null and _audio != null:
-			_audio.stream = stream2
-			_audio.play()
+	var stream2 := AudioManager.load_stream("res://voice/commander/briefing_02.mp3")
+	if stream2 != null and _audio != null:
+		_audio.stream = stream2
+		_audio.play()
 
 
 func _physics_process(delta: float) -> void:

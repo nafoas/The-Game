@@ -68,17 +68,32 @@ func _build_music_player() -> void:
 # Guarded loading
 # ---------------------------------------------------------------------------
 
+## Public guarded loader for other systems (NPC voice lines, etc.) so that
+## 0-byte placeholder assets silently no-op instead of spamming load errors.
+func load_stream(path: String) -> AudioStream:
+	return _load_stream(path)
+
+
 func _load_stream(path: String) -> AudioStream:
 	if path.is_empty():
 		return null
 	var stream: AudioStream = null
-	if ResourceLoader.exists(path):
+	if ResourceLoader.exists(path) and not _is_placeholder_file(path):
 		stream = load(path) as AudioStream
 	if stream == null and REMAPS.has(path):
 		var remapped: String = REMAPS[path]
 		if ResourceLoader.exists(remapped):
 			stream = load(remapped) as AudioStream
 	return stream
+
+
+## 0-byte stand-in assets fail to load with a noisy engine ERROR; detect them
+## up front so we fall straight through to the REMAPS table silently.
+func _is_placeholder_file(path: String) -> bool:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return false
+	return f.get_length() == 0
 
 
 # ---------------------------------------------------------------------------

@@ -593,11 +593,10 @@ func _play_voice(line_key: String) -> void:
 	if voice_file_prefix == "":
 		return
 	var voice_path := "res://voice/%s/%s.mp3" % [voice_file_prefix, line_key]
-	if ResourceLoader.exists(voice_path):
-		var stream := ResourceLoader.load(voice_path) as AudioStream
-		if stream != null and _audio != null:
-			_audio.stream = stream
-			_audio.play()
+	var stream := AudioManager.load_stream(voice_path)
+	if stream != null and _audio != null:
+		_audio.stream = stream
+		_audio.play()
 
 
 ## Approximate subtitle duration for each voice line family.
