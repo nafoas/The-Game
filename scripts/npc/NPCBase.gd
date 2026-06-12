@@ -9,9 +9,11 @@ const BULLET_DAMAGE: float = 10.0
 
 ## Real HL2 character models per faction (round-robin for variety).
 ## Imported MDLs come in at 0.02 scale; 1.27 restores true HL2 size (~1.83 m).
+## Only models whose materials actually ship in EP1/EP2 are cast here —
+## eli/kleiner/gman are missing face or body textures and render white.
 const FACTION_MODELS: Dictionary = {
-	"resistance": ["res://models/barney.mdl", "res://models/eli.mdl", "res://models/alyx.mdl"],
-	"hecu": ["res://models/gman.mdl"],
+	"resistance": ["res://models/alyx.mdl", "res://models/mossman.mdl", "res://models/magnusson.mdl"],
+	"hecu": ["res://models/barney.mdl"],
 }
 const MODEL_SCALE: float = 1.27
 static var _model_round_robin: Dictionary = {}

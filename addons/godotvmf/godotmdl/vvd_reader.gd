@@ -66,11 +66,25 @@ class VVDBoneWeight:
 	var weight_bytes: PackedFloat32Array;
 
 	func _on_read():
-		weight_bytes = PackedFloat32Array(weight);
-		weight_bytes.append(0.0);
+		# Godot expects exactly 4 bone bindings per vertex. Slots beyond
+		# num_bones can contain stale data in the VVD, so they're zeroed and
+		# the remaining weights renormalized.
+		weight_bytes = PackedFloat32Array([0.0, 0.0, 0.0, 0.0]);
+		bone_bytes = PackedInt32Array([0, 0, 0, 0]);
 
-		bone_bytes = PackedInt32Array(bone);
-		bone_bytes.append(0);
+		var used := clampi(num_bones, 0, 3);
+		var total := 0.0;
+		for i in range(used):
+			total += weight[i];
+
+		if total <= 0.0:
+			weight_bytes[0] = 1.0;
+			if used > 0: bone_bytes[0] = bone[0];
+			return;
+
+		for i in range(used):
+			bone_bytes[i] = bone[i];
+			weight_bytes[i] = weight[i] / total;
 
 	func _to_string() -> String:
 		return "VVDBoneWeight: weight=%s, bone=%s, num_bones=%d" % [weight, bone, num_bones]

@@ -50,15 +50,21 @@ func _init(mdl: MDLReader, vtx: VTXReader, vvd: VVDReader, phy: PHYReader, optio
 	create_occluder();
 	assign_materials();
 
+## Material slot (index into mdl.textures via skin families) per committed surface.
+var surface_material_slots: Array[int] = [];
+
 func setup_mesh_instance():
 	var scale = options.scale if not options.use_global_scale else VMFConfig.import.scale;
 
 	var body_part_index = 0;
-	for body_part in vtx.body_parts: 
+	for body_part in vtx.body_parts:
 		process_body_part(body_part, body_part_index);
 		body_part_index += 1;
 
-	array_mesh.lightmap_unwrap(Transform3D.IDENTITY, VMFConfig.models.lightmap_texel_size);
+	# NOTE: Skinned (non static prop) meshes keep their bone arrays;
+	#       lightmap unwrapping would rebuild the mesh and drop them.
+	if is_static_body:
+		array_mesh.lightmap_unwrap(Transform3D.IDENTITY, VMFConfig.models.lightmap_texel_size);
 	mesh_instance.name = "mesh";
 	mesh_instance.gi_mode = options.get("gi_mode", GeometryInstance3D.GI_MODE_DYNAMIC);
 	mesh_instance.set_mesh(array_mesh);
@@ -84,10 +90,21 @@ func process_mesh(mesh: VTXReader.VTXMesh, body_part_index: int, model_index: in
 	var mdl_model = mdl.body_parts[body_part_index].models[model_index];
 	var mdl_mesh = mdl_model.meshes[mesh_index];
 
-	var model_vertex_index_start = mdl_model.vert_index / 0x30 | 0; # WTF?????
+	var model_vertex_index_start = mdl_model.vert_index / 0x30 | 0; # vert_index is a byte offset; VVD vertices are 0x30 bytes each
 
+	# NOTE: One surface per MDL mesh. VTX indices are pre-offset by the strip
+	#       group's vertex base inside the mesh (see VTXReader.idx_base), so all
+	#       strip groups of a mesh must land in a single surface — otherwise
+	#       every strip group after the first commits its vertices without any
+	#       valid indices and renders as garbage triangle soup.
+	var total_verts := 0;
 	for strip_group in mesh.strip_groups:
-		st.begin(Mesh.PRIMITIVE_TRIANGLES);
+		total_verts += strip_group.vertices.size();
+
+	if total_verts == 0: return;
+
+	st.begin(Mesh.PRIMITIVE_TRIANGLES);
+	for strip_group in mesh.strip_groups:
 		for vert_info in strip_group.vertices:
 			var vid = vvd.find_vertex_index(model_vertex_index_start + mdl_mesh.vertex_index_start + vert_info.orig_mesh_vert_id);
 			var vert := vvd.vertices[vid];
@@ -100,11 +117,13 @@ func process_mesh(mesh: VTXReader.VTXMesh, body_part_index: int, model_index: in
 			st.set_weights(vert.bone_weight.weight_bytes);
 			st.add_vertex(vert.position * additional_basis.scaled(Vector3.ONE * scale));
 
+	for strip_group in mesh.strip_groups:
 		for indice in strip_group.indices:
-			if indice > strip_group.vertices.size() - 1: break;
+			if indice > total_verts - 1: continue;
 			st.add_index(indice);
 
-		st.commit(array_mesh);
+	st.commit(array_mesh);
+	surface_material_slots.append(mdl_mesh.material);
 
 func create_occluder():
 	if not options.generate_occluder: return;
@@ -216,51 +235,81 @@ func generate_collision():
 func setup_skeleton():
 	if Engine.get_version_info().minor < 4: return;
 	if is_static_body: return;
-	skeleton.basis = additional_basis.inverse();
 
 	for bone in mdl.bones:
 		skeleton.add_bone(bone.name);
 
+	# NOTE: Bone pos/quat are local bind-pose transforms (already converted to
+	#       y-up by ByteReader). Rest = bind pose, with translations scaled the
+	#       same way as the vertices. Scaling the basis as well would compound
+	#       down the bone chain and destroy the skin binds, so only the origin
+	#       is scaled here.
 	for bone in mdl.bones:
 		if bone.parent != -1:
 			skeleton.set_bone_parent(bone.id, bone.parent);
 
-		var parent_bone = mdl.bones[bone.parent];
-		var parent_transform = parent_bone.pos_to_bone if parent_bone else Transform3D.IDENTITY;
-		var target_transform = bone.pos_to_bone * parent_transform;
-		var basis = additional_basis if bone.parent == -1 else Basis.IDENTITY;
-		var transform = Transform3D(Basis(bone.quat), bone.pos);
-		transform = transform.scaled(Vector3.ONE * scale);
+		var rest := Transform3D(Basis(bone.quat), bone.pos * scale);
+		if bone.parent == -1:
+			rest = Transform3D(additional_basis, Vector3.ZERO) * rest;
 
-		skeleton.set_bone_global_pose_override(bone.id, target_transform, 1.0);
-		skeleton.set_bone_pose_position(bone.id, transform.origin);
-		skeleton.set_bone_pose_rotation(bone.id, transform.basis.get_rotation_quaternion());
-
-		var target_rest_pose = skeleton.get_bone_pose(bone.id);
-
-		skeleton.set_bone_rest(bone.id, target_rest_pose);
+		skeleton.set_bone_rest(bone.id, rest);
 		skeleton.reset_bone_pose(bone.id);
 
+	# Skin binds = inverse of the global rest (bind) pose, which matches the
+	# model-space vertex positions stored in the VVD.
 	var skin = skeleton.create_skin_from_rest_transforms();
 	skeleton.name = "skeleton";
-	mesh_instance.set_skeleton_path("skeleton");
 	mesh_instance.add_child(skeleton);
+	mesh_instance.set_skeleton_path("skeleton");
 	mesh_instance.set_skin(skin);
 	skeleton.set_owner(mesh_instance);
 
+## Known-missing textures remapped to shipped equivalents (EP1/EP2 only ships
+## a subset of the HL2 character materials). Keys/values are normalized
+## lowercase material paths relative to the materials folder.
+const TEXTURE_PATH_ALIASES := {
+	"models/alyx/alyx_sheet": "models/alyx/alyxhunted_sheet",
+	"models/alyx/alyx_sheet_skin": "models/alyx/alyxhunted_sheet",
+	"models/alyx/alyx_faceandhair": "models/alyx/alyxhunted_faceandhair",
+	"models/alyx/eyeball_r": "models/humans/female/eyeball_r",
+	"models/alyx/eyeball_l": "models/humans/female/eyeball_l",
+}
+
+## Flat-color stand-ins for small detail textures (mouth interiors, hair cards,
+## eye glints) that are missing from the shipped materials. Beats rendering
+## those surfaces plain white.
+const TEXTURE_COLOR_FALLBACKS := [
+	["glint", Color(0.05, 0.05, 0.05)],
+	["pupil", Color(0.08, 0.07, 0.06)],
+	["eyeball", Color(0.75, 0.72, 0.68)],
+	["teeth", Color(0.78, 0.73, 0.65)],
+	["tongue", Color(0.45, 0.2, 0.18)],
+	["mouth", Color(0.25, 0.1, 0.09)],
+	["hairbit", Color(0.1, 0.08, 0.06)],
+	["hair", Color(0.12, 0.1, 0.08)],
+];
+
 func assign_materials():
+	# NOTE: The materials array must stay aligned with mdl.textures —
+	#       a missing material may not shift the following indices.
 	var materials = [];
-	var skin = 0;
-	var mesh = mesh_instance.mesh;
-	
 
 	for tex in mdl.textures:
+		var material: Material = null;
 		for dir in mdl.textureDirs:
-			var path = VMFUtils.normalize_path(dir + "/" + tex.name);
-			if not VMTLoader.has_material(path.to_lower()): continue;
-			var material = VMTLoader.get_material(path.to_lower());
-			if not material: continue;
-			materials.append(material);
+			var path = VMFUtils.normalize_path(dir + "/" + tex.name).to_lower();
+
+			if path in TEXTURE_PATH_ALIASES and not VMTLoader.has_material(path):
+				path = TEXTURE_PATH_ALIASES[path];
+
+			if not VMTLoader.has_material(path): continue;
+			material = VMTLoader.get_material(path);
+			if material: break;
+
+		if not material:
+			material = create_texture_fallback_material(tex.name);
+
+		materials.append(material);
 
 	var surfaces = mesh_instance.mesh.get_surface_count();
 	var skin_id = 0;
@@ -269,18 +318,47 @@ func assign_materials():
 		skin_materials.resize(surfaces);
 
 		for i in range(surfaces):
-			if i >= skin_family.size(): continue;
-			var material_index = skin_family[i];
+			# Surfaces map to MDL meshes; each mesh stores its material slot,
+			# which the skin family remaps to a texture index.
+			var slot = surface_material_slots[i] if i < surface_material_slots.size() else i;
+			var material_index = skin_family[slot] if slot < skin_family.size() else slot;
 			if material_index > materials.size() - 1: continue;
 			skin_materials.set(i, materials[material_index]);
 
 		mesh_instance.set_meta("skin_" + str(skin_id), skin_materials);
 		skin_id += 1;
-	
+
 	apply_skin(mesh_instance, 0, true);
+
+## When no VMT exists for a texture (common for character models where only
+## part of the source materials shipped), try to build a basic material from
+## a same-named VTF in one of the model's texture dirs.
+func create_texture_fallback_material(tex_name: String) -> Material:
+	for dir in mdl.textureDirs:
+		var path = VMFUtils.normalize_path(dir + "/" + tex_name).to_lower();
+		var texture = VTFLoader.get_texture(path);
+		if not texture: continue;
+
+		var material := StandardMaterial3D.new();
+		material.albedo_texture = texture;
+		material.roughness = 1.0;
+		return material;
+
+	var lower_name := tex_name.to_lower();
+	for entry in TEXTURE_COLOR_FALLBACKS:
+		if not lower_name.contains(entry[0]): continue;
+		var material := StandardMaterial3D.new();
+		material.albedo_color = entry[1];
+		material.roughness = 1.0;
+		return material;
+
+	return null;
 
 func generate_lods():
 	if not options.get("generate_lods", false): return;
+	# NOTE: LOD generation rebuilds surfaces and can corrupt bone weight data
+	#       on skinned meshes, so it's limited to static props.
+	if not is_static_body: return;
 
 	var mesh = mesh_instance.mesh;
 	var importer_mesh := ImporterMesh.new();
