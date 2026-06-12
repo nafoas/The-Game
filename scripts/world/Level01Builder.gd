@@ -1106,14 +1106,19 @@ func _spawn_npcs() -> void:
 	if ResourceLoader.exists(RESISTANCE_SOLDIER_SCENE):
 		var rs_scene := ResourceLoader.load(RESISTANCE_SOLDIER_SCENE) as PackedScene
 		if rs_scene != null:
-			var street_positions := [
-				Vector3(4.0, 0.5, 25.0),
-				Vector3(5.0, 0.5, 40.0),
-				Vector3(-5.5, 0.5, 35.0),
+			# Street fighters patrol up and down the road so they read as
+			# moving (visible walk cycle) instead of standing mannequins.
+			var street_spawns := [
+				[Vector3(4.0, 0.5, 25.0), [Vector3(4.0, 0.5, 36.0), Vector3(4.0, 0.5, 24.0)]],
+				[Vector3(5.0, 0.5, 40.0), [Vector3(-3.0, 0.5, 44.0), Vector3(5.0, 0.5, 39.0)]],
+				[Vector3(-5.5, 0.5, 35.0), [Vector3(-5.5, 0.5, 23.0), Vector3(-5.5, 0.5, 36.0)]],
 			]
-			for pos in street_positions:
+			for entry in street_spawns:
 				var rs := rs_scene.instantiate()
-				rs.position = pos
+				rs.position = entry[0]
+				var wp: Array[Vector3] = []
+				wp.assign(entry[1])
+				rs.waypoints = wp
 				add_child(rs)
 
 			var alley_positions := [
@@ -1125,16 +1130,20 @@ func _spawn_npcs() -> void:
 				rs.position = pos
 				add_child(rs)
 
-			var plaza_positions := [
-				Vector3(-3.0, 0.5, 65.0),
-				Vector3(3.0, 0.5, 65.0),
-				Vector3(-6.0, 0.5, 70.0),
-				Vector3(6.0, 0.5, 70.0),
-				Vector3(0.0, 0.5, 74.0),
+			# Two plaza guards circle the fountain; the rest hold position.
+			var plaza_spawns := [
+				[Vector3(-3.0, 0.5, 65.0), [Vector3(3.0, 0.5, 65.0), Vector3(-3.0, 0.5, 65.0)]],
+				[Vector3(3.0, 0.5, 65.0), []],
+				[Vector3(-6.0, 0.5, 70.0), [Vector3(-6.0, 0.5, 76.0), Vector3(-6.0, 0.5, 69.0)]],
+				[Vector3(6.0, 0.5, 70.0), []],
+				[Vector3(0.0, 0.5, 74.0), []],
 			]
-			for pos in plaza_positions:
+			for entry in plaza_spawns:
 				var rs := rs_scene.instantiate()
-				rs.position = pos
+				rs.position = entry[0]
+				var wp: Array[Vector3] = []
+				wp.assign(entry[1])
+				rs.waypoints = wp
 				add_child(rs)
 
 			var interior_positions := [

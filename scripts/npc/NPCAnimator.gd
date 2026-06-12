@@ -18,6 +18,19 @@ enum Pose { IDLE, WALK, COMBAT, DEAD }
 
 const WALK_CYCLE_SPEED: float = 3.6   # phase radians per metre travelled (approx)
 const BLEND_SPEED: float = 6.0        # pose-space blend rate (1/s)
+const FAST_BLEND_SPEED: float = 24.0  # blend rate for fast-oscillating channels
+
+## Channels that carry the walk-cycle oscillation. These must blend much
+## faster than static pose channels: a 6/s low-pass against the ~12.6 rad/s
+## swing sinusoid attenuates it to ~43% amplitude (legs barely moved). At
+## 24/s the cycle keeps ~88% of its amplitude while pose switches stay smooth.
+const FAST_CHANNELS: Dictionary = {
+	"thigh_l": true, "thigh_r": true,
+	"calf_l": true, "calf_r": true,
+	"foot_l": true, "foot_r": true,
+	"arm_fwd_l": true, "arm_fwd_r": true,
+	"spine_sway": true, "pelvis_drop": true,
+}
 
 var _skeleton: Skeleton3D = null
 var _pose: Pose = Pose.IDLE
@@ -164,23 +177,26 @@ func _compute_target_pose() -> void:
 	match _pose:
 		Pose.WALK:
 			if moving:
-				thigh_l = swing * deg_to_rad(32.0)
-				thigh_r = -swing * deg_to_rad(32.0)
+				# HL2 walk/jog: big scissoring stride must read in a single
+				# still frame, so the hips swing wide (~±36 deg target,
+				# ~±32 deg effective after the fast blend).
+				thigh_l = swing * deg_to_rad(36.0)
+				thigh_r = -swing * deg_to_rad(36.0)
 				# Knee bends as the leg comes back/under
-				calf_l = deg_to_rad(8.0) + maxf(0.0, -sin(_phase + 0.7)) * deg_to_rad(38.0) * walk_blend
-				calf_r = deg_to_rad(8.0) + maxf(0.0, sin(_phase + 0.7)) * deg_to_rad(38.0) * walk_blend
+				calf_l = deg_to_rad(8.0) + maxf(0.0, -sin(_phase + 0.7)) * deg_to_rad(46.0) * walk_blend
+				calf_r = deg_to_rad(8.0) + maxf(0.0, sin(_phase + 0.7)) * deg_to_rad(46.0) * walk_blend
 				foot_l = -thigh_l * 0.4
 				foot_r = -thigh_r * 0.4
 				# Arms counter-swing the legs
-				arm_fwd_l = -swing * deg_to_rad(16.0)
-				arm_fwd_r = swing * deg_to_rad(16.0)
+				arm_fwd_l = -swing * deg_to_rad(24.0)
+				arm_fwd_r = swing * deg_to_rad(24.0)
 				arm_down = deg_to_rad(32.0)
-				elbow = deg_to_rad(22.0)
-				spine_lean = deg_to_rad(5.0)
-				spine_sway = deg_to_rad(sin(_phase) * 2.5)
+				elbow = deg_to_rad(26.0)
+				spine_lean = deg_to_rad(6.0)
+				spine_sway = deg_to_rad(sin(_phase) * 4.0)
 				head_pitch = 0.0
 				head_yaw = 0.0
-				pelvis_drop = absf(sin(_phase)) * -0.012
+				pelvis_drop = absf(sin(_phase)) * -0.035
 		Pose.COMBAT:
 			# Two-handed ready pose: arms forward and inward, elbows bent,
 			# slight crouch + forward lean. Legs keep walking if moving.
@@ -195,10 +211,10 @@ func _compute_target_pose() -> void:
 			head_pitch = 0.0
 			head_yaw = 0.0
 			if moving:
-				thigh_l = swing * deg_to_rad(26.0)
-				thigh_r = -swing * deg_to_rad(26.0)
-				calf_l = deg_to_rad(10.0) + maxf(0.0, -sin(_phase + 0.7)) * deg_to_rad(32.0) * walk_blend
-				calf_r = deg_to_rad(10.0) + maxf(0.0, sin(_phase + 0.7)) * deg_to_rad(32.0) * walk_blend
+				thigh_l = swing * deg_to_rad(32.0)
+				thigh_r = -swing * deg_to_rad(32.0)
+				calf_l = deg_to_rad(10.0) + maxf(0.0, -sin(_phase + 0.7)) * deg_to_rad(40.0) * walk_blend
+				calf_r = deg_to_rad(10.0) + maxf(0.0, sin(_phase + 0.7)) * deg_to_rad(40.0) * walk_blend
 				foot_l = -thigh_l * 0.4
 				foot_r = -thigh_r * 0.4
 			else:
@@ -242,9 +258,11 @@ func _compute_target_pose() -> void:
 
 
 func _blend_channels(delta: float) -> void:
-	var w: float = clampf(BLEND_SPEED * delta, 0.0, 1.0)
+	var w_slow: float = clampf(BLEND_SPEED * delta, 0.0, 1.0)
+	var w_fast: float = clampf(FAST_BLEND_SPEED * delta, 0.0, 1.0)
 	for key in _target:
 		var cur: float = _current.get(key, 0.0)
+		var w: float = w_fast if FAST_CHANNELS.has(key) else w_slow
 		_current[key] = lerpf(cur, _target[key], w)
 
 

@@ -23,6 +23,9 @@ static var _model_round_robin: Dictionary = {}
 @export var faction: String = "neutral"
 @export var voice_file_prefix: String = ""
 @export var is_friendly: bool = false
+## When true the NPC ignores player detection and just follows its waypoints.
+## Used by cinematics / the movie capture harness to stage clean walk cycles.
+@export var scripted_patrol: bool = false
 
 enum State { IDLE, PATROL, ALERT, COMBAT, DEAD }
 
@@ -256,7 +259,7 @@ func _state_idle(delta: float) -> void:
 		_idle_timer = 0.0
 		if waypoints.size() > 0:
 			current_state = State.PATROL
-	if _detect_player():
+	if not scripted_patrol and _detect_player():
 		current_state = State.ALERT
 		_alert_timer = 0.0
 		_alert_voice_played = false
@@ -267,7 +270,7 @@ func _state_patrol(delta: float) -> void:
 		current_state = State.IDLE
 		return
 
-	if _detect_player():
+	if not scripted_patrol and _detect_player():
 		current_state = State.ALERT
 		_alert_timer = 0.0
 		_alert_voice_played = false
@@ -277,6 +280,8 @@ func _state_patrol(delta: float) -> void:
 	var dir := (target - global_position)
 	dir.y = 0.0
 	if dir.length() < 1.0:
+		velocity.x = 0.0
+		velocity.z = 0.0
 		waypoint_timer += delta
 		if waypoint_timer >= 1.5:
 			waypoint_timer = 0.0
