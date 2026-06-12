@@ -273,6 +273,9 @@ const TEXTURE_PATH_ALIASES := {
 	"models/alyx/alyx_faceandhair": "models/alyx/alyxhunted_faceandhair",
 	"models/alyx/eyeball_r": "models/humans/female/eyeball_r",
 	"models/alyx/eyeball_l": "models/humans/female/eyeball_l",
+	# Only the blue vortigaunt recolor ships; same UV layout as the base sheet.
+	"models/vortigaunt/vortigaunt_sheet": "models/vortigaunt/vortigaunt_blue",
+	"models/vortigaunt/eyeball": "models/vortigaunt/eyeball_blue",
 }
 
 ## Flat-color stand-ins for small detail textures (mouth interiors, hair cards,
