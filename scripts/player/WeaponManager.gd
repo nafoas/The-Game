@@ -146,9 +146,9 @@ func _build_viewmodel() -> void:
 	_muzzle_light.name = "MuzzleLight"
 	_muzzle_light.position = Vector3(0.0, 0.0, -0.3)
 	_muzzle_light.light_color = Color(1.0, 0.82, 0.5)
-	_muzzle_light.light_energy = 0.7
-	_muzzle_light.omni_range = 2.6
-	_muzzle_light.omni_attenuation = 1.6
+	_muzzle_light.light_energy = 0.5
+	_muzzle_light.omni_range = 2.0
+	_muzzle_light.omni_attenuation = 2.0
 	_muzzle_light.visible = false
 	_viewmodel.add_child(_muzzle_light)
 

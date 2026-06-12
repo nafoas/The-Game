@@ -129,19 +129,16 @@ func _build_scene() -> void:
 	var lamp := OmniLight3D.new()
 	lamp.position = Vector3(3.6, 4.4, -8.5)
 	lamp.light_color = Color(1.0, 0.85, 0.55)
-	lamp.light_energy = 1.6
-	lamp.omni_range = 10.0
+	lamp.light_energy = 1.1
+	lamp.omni_range = 9.0
+	lamp.omni_attenuation = 2.0
 	lamp.shadow_enabled = true
 	add_child(lamp)
-	var cone := SourceMaterials.add_light_cone(self, Vector3(3.6, 4.35, -8.5), 3.6, 1.7,
-		Color(1.0, 0.85, 0.55), 0.05)
 
 	var flicker_script: GDScript = load("res://scripts/world/Flicker.gd")
 	if flicker_script != null:
 		var flicker: Node = flicker_script.new()
 		lamp.add_child(flicker)
-		if flicker.has_method("link_cone"):
-			flicker.link_cone(cone)
 
 	# Drifting fog dust across the whole frame
 	SourceMaterials.add_dust_motes(self, Vector3(0.0, 2.0, -8.0), Vector3(8.0, 2.5, 8.0), 24)

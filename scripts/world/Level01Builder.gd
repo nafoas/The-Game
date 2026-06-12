@@ -135,7 +135,7 @@ func _build_world_environment() -> void:
 
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.4, 0.43, 0.5)
-	env.ambient_light_energy = 0.55
+	env.ambient_light_energy = 0.5
 
 	world_env.environment = env
 	add_child(world_env)
@@ -143,8 +143,10 @@ func _build_world_environment() -> void:
 	var dir_light := DirectionalLight3D.new()
 	dir_light.name = "SunLight"
 	dir_light.light_color = Color(0.74, 0.77, 0.86)
-	dir_light.light_energy = 0.75
+	dir_light.light_energy = 0.65
 	dir_light.shadow_enabled = true
+	dir_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	dir_light.shadow_blur = 2.0
 	dir_light.directional_shadow_max_distance = 70.0
 	dir_light.rotation_degrees = Vector3(-52.0, 38.0, 0.0)
 	add_child(dir_light)
@@ -236,7 +238,8 @@ func _omni(parent: Node, pos: Vector3, color: Color, energy: float, range_m: flo
 	lamp.light_energy = energy
 	lamp.omni_range = range_m
 	lamp.shadow_enabled = shadows
-	lamp.omni_attenuation = 1.4
+	# Quadratic-style falloff — lower values leave a hard-edged bright disc.
+	lamp.omni_attenuation = 2.0
 	parent.add_child(lamp)
 	return lamp
 
@@ -357,11 +360,9 @@ func _street_lamp(parent: Node, pos: Vector3, arm_dir: float = 0.0, flicker: boo
 	var head_pos := pos + Vector3(arm_offset.x, 4.62, arm_offset.z)
 	_prop(parent, "bell_light", head_pos, arm_dir, 1.0)
 
-	var lamp := _omni(parent, head_pos + Vector3(0, -0.35, 0), Color(1.0, 0.86, 0.6), 1.7, 11.0)
-	var cone := SourceMaterials.add_light_cone(parent, head_pos + Vector3(0, -0.4, 0), 3.4, 1.5,
-		Color(1.0, 0.86, 0.58), 0.045)
+	var lamp := _omni(parent, head_pos + Vector3(0, -0.35, 0), Color(1.0, 0.9, 0.7), 0.9, 9.0)
 	if flicker:
-		_add_flicker(lamp, cone)
+		_add_flicker(lamp)
 
 
 func _concrete_barrier(parent: Node, pos: Vector3, rot_y: float = 0.0) -> void:
@@ -579,9 +580,8 @@ func _build_staging_area() -> void:
 
 	# Hanging work light under the tent
 	_prop(root, "bell_light", Vector3(0.0, 3.42, 2.0), 0.0, 1.0)
-	var tent_light := _omni(root, Vector3(0.0, 2.9, 2.0), Color(1.0, 0.9, 0.65), 1.5, 8.0)
+	var tent_light := _omni(root, Vector3(0.0, 2.9, 2.0), Color(1.0, 0.9, 0.65), 1.0, 7.0)
 	tent_light.shadow_enabled = true
-	SourceMaterials.add_light_cone(root, Vector3(0.0, 2.95, 2.0), 2.6, 1.6, Color(1.0, 0.9, 0.6), 0.04)
 
 	# Sandbag perimeter
 	_sandbag_row(root, Vector3(-8.0, 0.06, -6.0), 12, "x")
@@ -745,10 +745,8 @@ func _build_side_alley() -> void:
 
 	# Wall sconce with weak warm light
 	_prop(root, "sconce", Vector3(-8.6, 3.1, 44.3), 180.0, 1.0)
-	var lamp := _omni(root, Vector3(-8.8, 2.9, 45.2), Color(1.0, 0.78, 0.5), 1.1, 7.0)
-	var cone := SourceMaterials.add_light_cone(root, Vector3(-8.8, 2.9, 45.2), 2.6, 1.2,
-		Color(1.0, 0.8, 0.5), 0.04)
-	_add_flicker(lamp, cone)
+	var lamp := _omni(root, Vector3(-8.8, 2.9, 45.2), Color(1.0, 0.78, 0.5), 0.8, 6.0)
+	_add_flicker(lamp)
 
 
 # ---------------------------------------------------------------------------
@@ -946,21 +944,20 @@ func _build_interior() -> void:
 	# Hanging industrial lights + dust
 	for lp in [Vector3(0.0, 3.9, bz - 2.0), Vector3(2.0, 3.9, bz + 3.5)]:
 		_prop(root, "bell_light", lp, 0.0, 1.0)
-		var l := _omni(root, lp + Vector3(0, -0.45, 0), Color(1.0, 0.85, 0.55), 1.3, 7.0)
+		var l := _omni(root, lp + Vector3(0, -0.45, 0), Color(0.95, 0.93, 0.85), 0.8, 6.0)
 		if lp.x == 0.0:
 			l.shadow_enabled = true
-		SourceMaterials.add_light_cone(root, lp + Vector3(0, -0.5, 0), 2.6, 1.4,
-			Color(1.0, 0.85, 0.55), 0.045)
-	_omni(root, Vector3(0.0, 6.4, bz + 2.0), Color(1.0, 0.85, 0.6), 0.8, 7.0)
+	_omni(root, Vector3(0.0, 6.4, bz + 2.0), Color(1.0, 0.85, 0.6), 0.6, 6.0)
 
 	# Light shaft through the lit front window + drifting motes
 	var shaft := SpotLight3D.new()
 	shaft.position = Vector3(3.5, 2.4, bz - 6.0)
 	shaft.rotation_degrees = Vector3(-28.0, 195.0, 0.0)
 	shaft.light_color = Color(0.75, 0.8, 0.95)
-	shaft.light_energy = 1.4
+	shaft.light_energy = 0.9
 	shaft.spot_range = 7.0
-	shaft.spot_angle = 22.0
+	shaft.spot_angle = 28.0
+	shaft.spot_angle_attenuation = 1.5
 	root.add_child(shaft)
 	SourceMaterials.add_dust_motes(root, Vector3(2.6, 1.8, bz - 4.0), Vector3(1.6, 1.4, 1.6), 14)
 	SourceMaterials.add_dust_motes(root, Vector3(0.0, 2.2, bz + 2.0), Vector3(2.5, 1.8, 2.5), 10)
@@ -1023,10 +1020,8 @@ func _build_end_area() -> void:
 
 	# Porch light over the door
 	_prop(root, "sconce", Vector3(0.0, 3.4, bz - 5.25), 0.0, 1.0)
-	var porch := _omni(root, Vector3(0.0, 3.2, bz - 5.8), Color(1.0, 0.8, 0.5), 1.4, 8.0)
-	var cone := SourceMaterials.add_light_cone(root, Vector3(0.0, 3.1, bz - 5.7), 2.8, 1.3,
-		Color(1.0, 0.8, 0.5), 0.05)
-	_add_flicker(porch, cone)
+	var porch := _omni(root, Vector3(0.0, 3.2, bz - 5.8), Color(1.0, 0.8, 0.5), 0.9, 7.0)
+	_add_flicker(porch)
 
 	# Interior: someone left in a hurry
 	_prop(root, "hospital_bed", Vector3(3.4, 0.48, bz + 3.4), 12.0)
@@ -1038,7 +1033,7 @@ func _build_end_area() -> void:
 	_prop(root, "stool", Vector3(-2.6, 0.12, bz + 3.2), -140.0)
 	_prop(root, "shelf", Vector3(5.1, 1.0, bz + 1.0), -90.0)
 	_prop(root, "gnome", Vector3(4.0, 0.12, bz - 3.6), 230.0)
-	_omni(root, Vector3(0.0, 3.4, bz + 1.0), Color(1.0, 0.86, 0.6), 1.2, 9.0)
+	_omni(root, Vector3(0.0, 3.4, bz + 1.0), Color(1.0, 0.86, 0.6), 0.9, 7.0)
 	_prop(root, "bell_light", Vector3(0.0, 3.85, bz + 1.0), 0.0, 1.0)
 
 	# Path dressing between interior and safehouse (z 94..100)
