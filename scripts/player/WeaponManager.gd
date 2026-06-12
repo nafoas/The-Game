@@ -24,11 +24,12 @@ const WEAPON_DEFS: Dictionary = {
 			"res://sounds/weapons/alyx_gun/alyx_gun_fire3.wav",
 			"res://sounds/weapons/alyx_gun/alyx_gun_fire4.wav",
 		],
-		# Viewmodel: real HL2 world model held under the camera
+		# Viewmodel: real HL2 model held under the camera.
+		# Alyx gun MDL muzzle natively points -Z; slight pitch-up correction.
 		"model": "res://models/weapons/w_alyx_gun.mdl",
-		"model_pos": Vector3(0.0, 0.13, 0.08),
-		"model_rot": Vector3(0.0, 180.0, 0.0),
-		"model_scale": 1.5,
+		"model_pos": Vector3(0.0, 0.08, 0.04),
+		"model_rot": Vector3(8.0, -8.0, 0.0),
+		"model_scale": 1.25,
 		"muzzle_z": -0.32,
 	},
 	"mp5": {
@@ -43,11 +44,12 @@ const WEAPON_DEFS: Dictionary = {
 			"res://sounds/weapons/alyx_gun/alyx_gun_fire5.wav",
 			"res://sounds/weapons/alyx_gun/alyx_gun_fire6.wav",
 		],
+		# Combine sniper MDL muzzle natively points -X; yaw -90 points it -Z.
 		"model": "res://models/weapons/w_combine_sniper.mdl",
-		"model_pos": Vector3(0.0, 0.02, 0.1),
-		"model_rot": Vector3(0.0, 90.0, 0.0),
-		"model_scale": 1.0,
-		"muzzle_z": -0.75,
+		"model_pos": Vector3(-0.03, 0.0, 0.16),
+		"model_rot": Vector3(-4.0, -96.0, 0.0),
+		"model_scale": 0.45,
+		"muzzle_z": -0.55,
 	},
 }
 
@@ -69,6 +71,7 @@ var _reload_timer: float = 0.0
 
 var _viewmodel: Node3D = null
 var _gun_holder: Node3D = null
+var _gun_tween: Tween = null
 var _viewmodel_base_pos := Vector3(0.27, -0.22, -0.5)
 var _recoil_z: float = 0.0
 var _sway := Vector2.ZERO
@@ -179,6 +182,11 @@ func _refresh_viewmodel() -> void:
 		return
 	for child in _gun_holder.get_children():
 		child.queue_free()
+
+	# Reset any in-flight fire/reload animation on the holder.
+	_kill_gun_tween()
+	_gun_holder.position = Vector3.ZERO
+	_gun_holder.rotation = Vector3.ZERO
 
 	var def: Dictionary = WEAPON_DEFS.get(current_weapon_name, {})
 	var model_path: String = def.get("model", "")
@@ -292,6 +300,12 @@ func _equip(weapon_name: String) -> void:
 		return
 	var changed := weapon_name != current_weapon_name
 	current_weapon_name = weapon_name
+	if _reloading:
+		# Cancel reload: stop the lowered-gun animation and snap back.
+		_kill_gun_tween()
+		if _gun_holder != null:
+			_gun_holder.position = Vector3.ZERO
+			_gun_holder.rotation = Vector3.ZERO
 	_reloading = false
 	_reload_timer = 0.0
 	if changed and _viewmodel != null:
@@ -322,6 +336,7 @@ func _start_reload() -> void:
 	_reload_timer = 0.0
 	if not _reload_sound.is_empty():
 		_play_local_sound(_reload_sound)
+	_play_reload_anim()
 
 
 func _finish_reload() -> void:
@@ -385,6 +400,7 @@ func _fire_shot(def: Dictionary) -> void:
 	_bloom = minf(_bloom + 0.004, 0.02)
 	if _camera != null:
 		_camera.rotation.x += deg_to_rad(0.4)
+	_play_fire_anim()
 
 	# Hitscan ray with random cone spread
 	if _camera == null:
@@ -517,6 +533,52 @@ func _play_local_sound(path: String) -> void:
 	_audio.stream = stream
 	_audio.pitch_scale = randf_range(0.96, 1.04)
 	_audio.play()
+
+
+# ---------------------------------------------------------------------------
+# Viewmodel animations (fire kick + reload, tweened on the gun holder so they
+# never fight the procedural sway/bob applied to _viewmodel)
+# ---------------------------------------------------------------------------
+
+func _kill_gun_tween() -> void:
+	if _gun_tween != null and _gun_tween.is_valid():
+		_gun_tween.kill()
+	_gun_tween = null
+
+
+## Quick kick back + muzzle-up pitch, springing back over ~0.15s.
+func _play_fire_anim() -> void:
+	if _gun_holder == null:
+		return
+	_kill_gun_tween()
+	_gun_holder.position = Vector3(0.0, 0.01, 0.05)
+	_gun_holder.rotation_degrees = Vector3(5.0, 0.0, 0.0)
+	_gun_tween = create_tween().set_parallel(true)
+	_gun_tween.tween_property(_gun_holder, "position", Vector3.ZERO, 0.15) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_gun_tween.tween_property(_gun_holder, "rotation_degrees", Vector3.ZERO, 0.15) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+
+## Lower the gun and tilt the muzzle down for the reload, then bring it back
+## up just before the reload timer completes (RELOAD_TIME total).
+func _play_reload_anim() -> void:
+	if _gun_holder == null:
+		return
+	_kill_gun_tween()
+	var down_pos := Vector3(0.03, -0.13, 0.07)
+	var down_rot := Vector3(-25.0, 6.0, 10.0)
+	var hold := maxf(RELOAD_TIME - 0.35 - 0.3 - 0.05, 0.1)
+	_gun_tween = create_tween()
+	_gun_tween.tween_property(_gun_holder, "position", down_pos, 0.35) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_gun_tween.parallel().tween_property(_gun_holder, "rotation_degrees", down_rot, 0.35) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_gun_tween.tween_interval(hold)
+	_gun_tween.tween_property(_gun_holder, "position", Vector3.ZERO, 0.3) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_gun_tween.parallel().tween_property(_gun_holder, "rotation_degrees", Vector3.ZERO, 0.3) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 # ---------------------------------------------------------------------------
