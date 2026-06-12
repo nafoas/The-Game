@@ -527,6 +527,7 @@ func _die() -> void:
 func _shoot() -> void:
 	if player_ref == null:
 		return
+	print("DBG shoot t=%.2f pos=%v burst_left=%d facing_dot=%.2f" % [Time.get_ticks_msec() / 1000.0, global_position, _burst_shots_left, _facing_forward().dot((player_ref.global_position - global_position).normalized())])
 
 	# Play shoot sound (alyx gun set — pistol_fire files don't ship in EP2)
 	var shoot_path := "res://sounds/weapons/alyx_gun/alyx_gun_fire4.wav"

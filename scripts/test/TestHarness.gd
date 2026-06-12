@@ -207,6 +207,7 @@ func _movie_combat(player: CharacterBody3D) -> void:
 	for i in 26:
 		if not is_instance_valid(npc):
 			return
+		print("DBG walk i=%d pos=%v state=%s vel=%v roty=%.1f" % [i, npc.global_position, npc.current_state, npc.velocity, rad_to_deg(npc.rotation.y)])
 		_face_point(player, npc.global_position + Vector3(0, 0.8, 0))
 		await _wait(0.25)
 
@@ -217,6 +218,7 @@ func _movie_combat(player: CharacterBody3D) -> void:
 	for i in 12:
 		if not is_instance_valid(npc):
 			return
+		print("DBG adv i=%d pos=%v state=%s vel=%v roty=%.1f" % [i, npc.global_position, npc.current_state, npc.velocity, rad_to_deg(npc.rotation.y)])
 		_face_point(player, npc.global_position + Vector3(0, 1.0, 0))
 		await _wait(0.25)
 
