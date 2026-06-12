@@ -9,16 +9,26 @@ const SPRINT_SPEED: float = 6.1
 const CROUCH_SPEED: float = 2.0
 const JUMP_VELOCITY: float = 4.6
 const GRAVITY: float = 15.0
+# Source engine movement (sv_accelerate=10, sv_friction=4, sv_airaccelerate=10,
+# sv_stopspeed=100u). Quake-style accelerate gives instant, snappy direction
+# changes on the ground; friction stops the player in ~0.2 s on key release.
 const ACCEL: float = 10.0
-const AIR_ACCEL: float = 2.5
+const FRICTION: float = 4.0
+const STOP_SPEED: float = 1.9   # 100 units/s — boosts friction at low speeds
+const AIR_ACCEL: float = 10.0
+const AIR_SPEED_CAP: float = 0.6  # 30 units/s wishspeed cap while airborne
 
 const STAND_HEAD_Y: float = 1.6
 const CROUCH_HEAD_Y: float = 1.0
 const STAND_CAPSULE_H: float = 1.8
 const CROUCH_CAPSULE_H: float = 1.2
 
-const SPRINT_FOV_BOOST: float = 7.0
-const BOB_AMPLITUDE: float = 0.04
+const BASE_FOV: float = 90.0
+const SPRINT_FOV: float = 95.0
+const BOB_AMPLITUDE_V: float = 0.015
+const BOB_AMPLITUDE_H: float = 0.007
+const BOB_FREQ_WALK: float = 2.0    # Hz
+const BOB_FREQ_SPRINT: float = 2.5  # Hz
 const FOOTSTEP_INTERVAL: float = 0.45
 const HARD_LAND_VELOCITY: float = 8.0
 
@@ -32,6 +42,8 @@ var is_crouching: bool = false
 var is_sprinting: bool = false
 
 var _bob_time: float = 0.0
+var _bob_blend: float = 0.0
+var _head_base_y: float = STAND_HEAD_Y
 var _footstep_timer: float = 0.0
 var _footstep_index: int = 0
 var _footstep_streams: Array[AudioStream] = []
@@ -44,6 +56,11 @@ var _land_dip: float = 0.0
 
 func _ready() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	# Upgrade the old narrow default to the HL2-style 90° base FOV while
+	# still respecting a value the player has changed in the options menu.
+	if is_equal_approx(GameManager.base_fov, 75.0):
+		GameManager.base_fov = BASE_FOV
+	camera.fov = GameManager.base_fov
 	_load_sounds()
 
 
@@ -141,21 +158,15 @@ func _physics_process(delta: float) -> void:
 		speed = SPRINT_SPEED
 
 	if is_on_floor():
-		# Ground: friction-style lerp toward wish velocity.
-		var target := wish_dir * speed
-		velocity.x = lerpf(velocity.x, target.x, ACCEL * delta)
-		velocity.z = lerpf(velocity.z, target.z, ACCEL * delta)
+		# Source-style ground move: friction first, then Quake accelerate.
+		_apply_friction(delta)
+		_accelerate(wish_dir, speed, ACCEL, delta)
 		if Input.is_action_just_pressed("jump") and not is_crouching:
 			velocity.y = JUMP_VELOCITY
 	else:
-		# Air: weak acceleration, keep momentum.
-		velocity.x += wish_dir.x * speed * AIR_ACCEL * delta
-		velocity.z += wish_dir.z * speed * AIR_ACCEL * delta
-		var horizontal := Vector2(velocity.x, velocity.z)
-		if horizontal.length() > SPRINT_SPEED:
-			horizontal = horizontal.normalized() * SPRINT_SPEED
-			velocity.x = horizontal.x
-			velocity.z = horizontal.y
+		# Air: sv_airaccelerate-style — small capped wishspeed, no friction,
+		# momentum is preserved (allows HL2-like air control / strafing).
+		_accelerate(wish_dir, minf(speed, AIR_SPEED_CAP), AIR_ACCEL, delta)
 
 	move_and_slide()
 
@@ -164,6 +175,37 @@ func _physics_process(delta: float) -> void:
 	_update_footsteps(delta)
 	_check_landing()
 	_was_on_floor = is_on_floor()
+
+
+# Quake/Source accelerate: project current velocity onto the wish direction
+# and only add the missing speed, capped by accel * wish_speed * delta.
+# Turning never costs speed, so direction changes feel instant.
+func _accelerate(wish_dir: Vector3, wish_speed: float, accel: float, delta: float) -> void:
+	if wish_dir == Vector3.ZERO or wish_speed <= 0.0:
+		return
+	var current := velocity.x * wish_dir.x + velocity.z * wish_dir.z
+	var add_speed := wish_speed - current
+	if add_speed <= 0.0:
+		return
+	var accel_speed := minf(accel * wish_speed * delta, add_speed)
+	velocity.x += wish_dir.x * accel_speed
+	velocity.z += wish_dir.z * accel_speed
+
+
+# Source friction (sv_friction=4 with stopspeed): exponential decay at speed,
+# linear snap to zero below STOP_SPEED — releasing keys stops in ~0.2 s.
+func _apply_friction(delta: float) -> void:
+	var horizontal := Vector2(velocity.x, velocity.z)
+	var speed := horizontal.length()
+	if speed < 0.01:
+		velocity.x = 0.0
+		velocity.z = 0.0
+		return
+	var control := maxf(speed, STOP_SPEED)
+	var drop := control * FRICTION * delta
+	var new_speed := maxf(speed - drop, 0.0) / speed
+	velocity.x *= new_speed
+	velocity.z *= new_speed
 
 
 func _update_crouch(delta: float) -> void:
@@ -191,7 +233,7 @@ func _can_stand() -> bool:
 
 func _update_fov(delta: float) -> void:
 	var base: float = GameManager.base_fov
-	var target := base + SPRINT_FOV_BOOST if is_sprinting else base
+	var target := base + (SPRINT_FOV - BASE_FOV) if is_sprinting else base
 	camera.fov = lerpf(camera.fov, target, 8.0 * delta)
 
 
@@ -199,18 +241,26 @@ func _update_view_bob(delta: float) -> void:
 	var target_head_y := CROUCH_HEAD_Y if is_crouching else STAND_HEAD_Y
 	var horizontal_speed := Vector2(velocity.x, velocity.z).length()
 
-	var bob_offset := 0.0
-	if is_on_floor() and horizontal_speed > 0.5:
-		_bob_time += delta * horizontal_speed * 2.2
-		bob_offset = sin(_bob_time) * BOB_AMPLITUDE
-	else:
+	# Bob amplitude blends in/out quickly so starting and stopping never pops,
+	# but the offset itself is applied directly each frame — no camera lag.
+	var moving := is_on_floor() and horizontal_speed > 0.5
+	_bob_blend = move_toward(_bob_blend, 1.0 if moving else 0.0, delta * 8.0)
+	if moving:
+		var freq := BOB_FREQ_SPRINT if is_sprinting else BOB_FREQ_WALK
+		_bob_time += delta * TAU * freq
+	elif _bob_blend <= 0.0:
 		_bob_time = 0.0
+
+	var bob_v := sin(_bob_time) * BOB_AMPLITUDE_V * _bob_blend
+	var bob_h := sin(_bob_time * 0.5) * BOB_AMPLITUDE_H * _bob_blend
 
 	# Landing dip recovers toward 0.
 	_land_dip = lerpf(_land_dip, 0.0, 8.0 * delta)
 
-	var desired_y := target_head_y + bob_offset - _land_dip
-	head.position.y = lerpf(head.position.y, desired_y, 10.0 * delta)
+	# Smooth only the crouch height transition; bob is unsmoothed.
+	_head_base_y = lerpf(_head_base_y, target_head_y, 10.0 * delta)
+	head.position.y = _head_base_y + bob_v - _land_dip
+	camera.position.x = bob_h
 
 
 func _update_footsteps(delta: float) -> void:
