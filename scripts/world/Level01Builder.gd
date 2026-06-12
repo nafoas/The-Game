@@ -1071,9 +1071,9 @@ func _build_skyline() -> void:
 	root.name = "Skyline"
 	add_child(root)
 
-	var sil := StandardMaterial3D.new()
-	sil.albedo_color = Color(0.13, 0.14, 0.165)
-	sil.roughness = 1.0
+	# Textured dark concrete — flat albedo boxes this close to the playable
+	# area read as untextured geometry.
+	var sil := SourceMaterials.mat("skyline", Color(0.13, 0.14, 0.165))
 
 	var lit := SourceMaterials.lit_window_mat()
 

@@ -58,8 +58,10 @@ const PALETTE := {
 		"tile_m": 2.56, "roughness": 0.92,
 	},
 	"plaster_gray": {
-		"texture": "res://materials/plaster/plasterwall011b.vtf",
-		"tile_m": 2.56, "roughness": 0.92,
+		# plasterwall011b is near-white and reads as a flat untextured box under
+		# fog; 014b is the same family with visible weathering/stain contrast.
+		"texture": "res://materials/plaster/plasterwall014b.vtf",
+		"tile_m": 2.56, "roughness": 0.92, "tint": Color(0.84, 0.84, 0.82),
 	},
 	"plaster_worn": {
 		"texture": "res://materials/plaster/plasterwall053a.vtf",
@@ -85,13 +87,22 @@ const PALETTE := {
 		"texture": "res://materials/concrete/ep2_concretewall01a.vtf",
 		"tile_m": 2.56, "roughness": 0.93,
 	},
+	"skyline": {
+		# Stained dark concrete for the out-of-bounds silhouette blocks —
+		# they sit close enough to the playable space that flat albedo boxes
+		# read as missing textures.
+		"texture": "res://materials/concrete/concretewall_bunker04a.vtf",
+		"tile_m": 3.4, "roughness": 1.0, "tint": Color(0.42, 0.44, 0.5),
+	},
 	"indust_wall": {
 		"texture": "res://materials/concrete/indust_concretewall01a.vtf",
 		"tile_m": 2.56, "roughness": 0.93,
 	},
 	"trim": {
-		"texture": "res://materials/concrete/concretewall076a.vtf",
-		"tile_m": 1.6, "roughness": 0.9, "tint": Color(0.8, 0.78, 0.75),
+		# NOTE: concretewall076a is BLUE-painted concrete — it made every
+		# cornice/sill band blue. 075a is plain weathered grey concrete.
+		"texture": "res://materials/concrete/concretewall075a.vtf",
+		"tile_m": 1.6, "roughness": 0.9, "tint": Color(0.72, 0.7, 0.67),
 	},
 	"baseboard": {
 		"texture": "res://materials/concrete/concretewall075b.vtf",
