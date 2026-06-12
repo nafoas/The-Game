@@ -276,6 +276,45 @@ const TEXTURE_PATH_ALIASES := {
 	# Only the blue vortigaunt recolor ships; same UV layout as the base sheet.
 	"models/vortigaunt/vortigaunt_sheet": "models/vortigaunt/vortigaunt_blue",
 	"models/vortigaunt/eyeball": "models/vortigaunt/eyeball_blue",
+
+	# --- Props (EP1/EP2 only ships a subset of the HL2 prop materials) ---
+	# Same van, EP1 re-export ("thrown" variant) — same paint scheme.
+	"models/props_vehicles/van001a_01": "models/vehicles/vehicle_van/vanthrown001a_01",
+	"models/props_vehicles/van001b_01": "models/vehicles/vehicle_van/vanthrown001a_01",
+	# "Off" / alternate skin variants share the UV layout of the missing base.
+	# (radio_sheet_off / lab_objects02_off VMTs exist but their VTFs don't,
+	# so those two fall back to flat colors below instead.)
+	"models/props_lab/recievers01": "models/props_lab/recievers01_off",
+	"models/props_lab/monitor02": "models/props_lab/monitor_lost",
+	"models/props_lab/monitor02b": "models/props_lab/monitor_lost",
+	"models/props_c17/industrialbellbottomon01": "models/props_c17/industrialbellbottomoff01",
+	"models/props_c17/door01a": "models/props_c17/door01a_skin15",
+	"models/props_c17/door01a_skin2": "models/props_c17/door01a_skin15",
+	"models/props_c17/door01a_skin3": "models/props_c17/door01a_skin16",
+	"models/props_c17/door01a_skin4": "models/props_c17/door01a_skin15",
+	"models/props_c17/door01a_skin5": "models/props_c17/door01a_skin16",
+	"models/props_c17/door01a_skin6": "models/props_c17/door01a_skin15",
+	"models/props_c17/door01a_skin7": "models/props_c17/door01a_skin16",
+	"models/props_c17/door01a_skin8": "models/props_c17/door01a_skin15",
+	"models/props_c17/door01a_skin9": "models/props_c17/door01a_skin16",
+	"models/props_c17/door01a_skin10": "models/props_c17/door01a_skin15",
+	"models/props_c17/door01a_skin11": "models/props_c17/door01a_skin16",
+	"models/props_c17/door01a_skin12": "models/props_c17/door01a_skin15",
+	"models/props_c17/door01a_skin13": "models/props_c17/door01a_skin16",
+	"models/props_c17/door01a_skin14": "models/props_c17/door01a_skin15",
+	# Weathered stand-ins of the same material family (rusty/painted metal,
+	# concrete, junk sheets) — UVs differ but they read correctly in-game,
+	# which beats flat white.
+	"models/props_lab/dogdumpster_sheet": "models/props_debris/debrisdog001_sheet",
+	"models/props_c17/oil_drum001a": "models/props_c17/canister02a",
+	"models/props_c17/canister_propane01a": "models/props_c17/canister02a",
+	"models/props_c17/lockers001a": "models/props_silo/nucleartestcabinet",
+	"models/props_junk/i-beam_cluster01": "models/props_radiostation/metal_truss",
+	"models/props_wasteland/barricade_composite01": "models/props_wasteland/fence_sheet01",
+	"models/props_wasteland/prison_yard001": "models/props_wasteland/fence_sheet01",
+	"models/props_debris/rebar_concrete001": "models/props_debris/concretefloor030a",
+	"models/props_debris/plasterwall021a": "models/props_debris/concretefloor013a",
+	"models/props_citizen_tech/itemcrate_sheet": "models/items/ammocrate_items",
 }
 
 ## Flat-color stand-ins for small detail textures (mouth interiors, hair cards,
@@ -290,7 +329,25 @@ const TEXTURE_COLOR_FALLBACKS := [
 	["mouth", Color(0.25, 0.1, 0.09)],
 	["hairbit", Color(0.1, 0.08, 0.06)],
 	["hair", Color(0.12, 0.1, 0.08)],
+	# Prop material families with no shipped texture at all.
+	["radio_sheet", Color(0.26, 0.3, 0.24)],
+	["lab_objects", Color(0.32, 0.34, 0.33)],
+	["furniture", Color(0.38, 0.28, 0.18)],
+	["shelf", Color(0.38, 0.28, 0.18)],
+	["wood", Color(0.36, 0.26, 0.17)],
+	["photo", Color(0.32, 0.27, 0.2)],
+	["concrete", Color(0.55, 0.52, 0.46)],
+	["plaster", Color(0.6, 0.56, 0.49)],
+	["rounds", Color(0.55, 0.42, 0.2)],
+	["bicycle", Color(0.2, 0.22, 0.26)],
+	["stool", Color(0.32, 0.33, 0.35)],
+	["ladder", Color(0.35, 0.36, 0.38)],
+	["bell", Color(0.28, 0.3, 0.3)],
 ];
+
+## Last-resort albedo for completely unresolvable materials. Weathered grey
+## reads as bare metal/primer in the HL2 palette — flat white reads as a bug.
+const TEXTURE_DEFAULT_FALLBACK_COLOR := Color(0.42, 0.41, 0.39);
 
 func assign_materials():
 	# NOTE: The materials array must stay aligned with mdl.textures —
@@ -307,6 +364,10 @@ func assign_materials():
 
 			if not VMTLoader.has_material(path): continue;
 			material = VMTLoader.get_material(path);
+			# A VMT can load while its $basetexture VTF is missing, which
+			# yields a plain white material — treat that as unresolved.
+			if material and not is_material_textured(material):
+				material = null;
 			if material: break;
 
 		if not material:
@@ -333,6 +394,16 @@ func assign_materials():
 
 	apply_skin(mesh_instance, 0, true);
 
+## True when a resolved material actually carries an albedo texture (or is a
+## deliberately flat-colored / shader material). VMTs whose $basetexture VTF
+## is missing load as default-white StandardMaterial3D — those are unusable.
+static func is_material_textured(material: Material) -> bool:
+	if not (material is StandardMaterial3D): return true;
+	if material.albedo_texture != null: return true;
+	var c: Color = material.albedo_color;
+	# Non-white albedo means the VMT intentionally tinted it.
+	return c.r < 0.99 or c.g < 0.99 or c.b < 0.99;
+
 ## When no VMT exists for a texture (common for character models where only
 ## part of the source materials shipped), try to build a basic material from
 ## a same-named VTF in one of the model's texture dirs.
@@ -355,7 +426,10 @@ func create_texture_fallback_material(tex_name: String) -> Material:
 		material.roughness = 1.0;
 		return material;
 
-	return null;
+	var default_material := StandardMaterial3D.new();
+	default_material.albedo_color = TEXTURE_DEFAULT_FALLBACK_COLOR;
+	default_material.roughness = 1.0;
+	return default_material;
 
 func generate_lods():
 	if not options.get("generate_lods", false): return;

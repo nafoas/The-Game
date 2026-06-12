@@ -15,7 +15,8 @@ const FLICKER_SCRIPT := "res://scripts/world/Flicker.gd"
 const MDL := {
 	"hatchback": "res://models/props_vehicles/car001b_hatchback.mdl",
 	"van": "res://models/props_vehicles/van001a_nodoor.mdl",
-	"truck": "res://models/props_vehicles/truck001a.mdl",
+	# truck001a's materials don't ship in EP1/EP2 — the EP2 muscle car does.
+	"truck": "res://models/vehicle/vehicle_rich.mdl",
 	"dumpster": "res://models/props_lab/scrapyarddumpster_static.mdl",
 	"oildrum": "res://models/props_c17/oildrum_crush.mdl",
 	"propane": "res://models/props_junk/propane_tank001a.mdl",

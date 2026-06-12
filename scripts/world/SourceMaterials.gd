@@ -385,10 +385,12 @@ static func add_dust_motes(parent: Node, pos: Vector3, extents: Vector3,
 	p.gravity = Vector3.ZERO
 	p.initial_velocity_min = 0.02
 	p.initial_velocity_max = 0.08
-	p.scale_amount_min = 0.01
-	p.scale_amount_max = 0.025
+	# NOTE: Keep the quad itself mote-sized — relying on scale_amount alone
+	# leaves metre-wide additive squares floating in the room.
+	p.scale_amount_min = 0.5
+	p.scale_amount_max = 1.25
 	var mesh := QuadMesh.new()
-	mesh.size = Vector2(1.0, 1.0)
+	mesh.size = Vector2(0.02, 0.02)
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
