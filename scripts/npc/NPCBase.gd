@@ -4,8 +4,17 @@ const GRAVITY: float = 20.0
 const MOVE_SPEED: float = 3.5
 const DETECTION_RANGE: float = 20.0
 const ATTACK_RANGE: float = 15.0
-const ATTACK_INTERVAL: float = 1.5
 const BULLET_DAMAGE: float = 10.0
+
+# HL2-style burst fire: 2-4 aimed shots, then a 1-2 s pause (often spent
+# repositioning), instead of a metronomic shot every 1.5 s.
+const BURST_SHOT_INTERVAL: float = 0.22
+const BURST_PAUSE_MIN: float = 1.0
+const BURST_PAUSE_MAX: float = 2.0
+const FACING_DOT_MIN: float = 0.9       # only fire within ~25 deg of target
+const COMBAT_GIVE_UP_RANGE: float = 30.0
+const LOSE_SIGHT_TIME: float = 3.0      # seconds without LOS before disengaging
+const STRAFE_TIME: float = 0.8          # reposition burst length between volleys
 
 ## Real HL2 character models per faction (round-robin for variety).
 ## Imported MDLs come in at 0.02 scale; 1.27 restores true HL2 size (~1.83 m).
@@ -32,9 +41,16 @@ enum State { IDLE, PATROL, ALERT, COMBAT, DEAD }
 var health: float = 100.0
 var current_state: State = State.IDLE
 var player_ref: CharacterBody3D = null
-var attack_timer: float = 0.0
 var current_waypoint: int = 0
 var waypoint_timer: float = 0.0
+
+# Burst-fire bookkeeping
+var _burst_shots_left: int = 0
+var _burst_cooldown: float = 0.5
+var _shot_timer: float = 0.0
+var _lost_sight_timer: float = 0.0
+var _strafe_dir: float = 1.0
+var _strafe_timer: float = 0.0
 
 var _idle_timer: float = 0.0
 var _alert_timer: float = 0.0
@@ -315,8 +331,15 @@ func _state_alert(delta: float) -> void:
 	_alert_timer += delta
 	if _alert_timer >= 0.5:
 		current_state = State.COMBAT
+		_burst_shots_left = 0
+		_burst_cooldown = randf_range(0.3, 0.7)
+		_lost_sight_timer = 0.0
 
 
+## HL2-style engagement: keep facing the enemy at all times, advance when out
+## of range, fire 2-4 shot aimed bursts with 1-2 s pauses, sidestep between
+## volleys, and only ever pull the trigger with line of sight AND the body
+## actually pointed at the target.
 func _state_combat(delta: float) -> void:
 	if player_ref == null:
 		current_state = State.IDLE
@@ -328,35 +351,77 @@ func _state_combat(delta: float) -> void:
 		_face_target(player_ref.global_position, delta)
 		return
 
-	attack_timer += delta
 	_combat_taunt_timer += delta
 
-	var dist := global_position.distance_to(player_ref.global_position)
+	var target := player_ref.global_position
+	var dist := global_position.distance_to(target)
+	var has_los := _has_line_of_sight()
 
-	_face_target(player_ref.global_position, delta)
+	# Always track the enemy with the body.
+	_face_target(target, delta)
 
-	if dist > ATTACK_RANGE:
-		# Move toward player
-		var dir := (player_ref.global_position - global_position)
+	# Disengage only when the fight is truly over: enemy far away, or no
+	# line of sight for a few seconds (not the instant a 20 m circle breaks).
+	if has_los:
+		_lost_sight_timer = 0.0
+	else:
+		_lost_sight_timer += delta
+	if dist > COMBAT_GIVE_UP_RANGE or _lost_sight_timer > LOSE_SIGHT_TIME:
+		_lost_sight_timer = 0.0
+		current_state = State.PATROL if waypoints.size() > 0 else State.IDLE
+		return
+
+	# --- Movement ---
+	if dist > ATTACK_RANGE or not has_los:
+		# Out of range (or sight blocked): press toward the enemy.
+		var dir := target - global_position
 		dir.y = 0.0
 		dir = dir.normalized()
 		velocity.x = dir.x * MOVE_SPEED
 		velocity.z = dir.z * MOVE_SPEED
+	elif _strafe_timer > 0.0:
+		# Reposition sideways between bursts (reads as ducking for cover).
+		_strafe_timer -= delta
+		var right := global_transform.basis.x * _strafe_dir
+		velocity.x = right.x * MOVE_SPEED * 0.7
+		velocity.z = right.z * MOVE_SPEED * 0.7
 	else:
-		# Take cover occasionally — move laterally
-		if fmod(_combat_taunt_timer, 5.0) < 0.5:
-			var right := global_transform.basis.x
-			velocity.x = right.x * MOVE_SPEED
-			velocity.z = right.z * MOVE_SPEED
-		else:
-			velocity.x = lerp(velocity.x, 0.0, 0.2)
-			velocity.z = lerp(velocity.z, 0.0, 0.2)
-		if attack_timer >= ATTACK_INTERVAL:
-			attack_timer = 0.0
-			_shoot()
+		# Hold position while shooting.
+		velocity.x = lerp(velocity.x, 0.0, 0.25)
+		velocity.z = lerp(velocity.z, 0.0, 0.25)
 
-	if not _detect_player():
-		current_state = State.PATROL
+	# --- Firing: bursts, only when in range, visible AND actually aimed ---
+	var can_fire := dist <= ATTACK_RANGE and has_los and _is_facing(target)
+	if _burst_shots_left > 0:
+		if can_fire:
+			_shot_timer += delta
+			if _shot_timer >= BURST_SHOT_INTERVAL:
+				_shot_timer = 0.0
+				_shoot()
+				_burst_shots_left -= 1
+				if _burst_shots_left == 0:
+					_burst_cooldown = randf_range(BURST_PAUSE_MIN, BURST_PAUSE_MAX)
+					# Sidestep during part of the pause, alternating sides.
+					_strafe_dir = 1.0 if randf() < 0.5 else -1.0
+					_strafe_timer = STRAFE_TIME
+		# else: hold the rest of the burst until back on target
+	else:
+		_burst_cooldown -= delta
+		if _burst_cooldown <= 0.0 and can_fire:
+			_burst_shots_left = randi_range(2, 4)
+			_shot_timer = BURST_SHOT_INTERVAL  # first shot fires immediately
+
+
+## Pure LOS check toward the player (no distance gate) for combat decisions.
+func _has_line_of_sight() -> bool:
+	if player_ref == null:
+		return false
+	_los_ray.target_position = to_local(player_ref.global_position + Vector3(0, 0.9, 0))
+	_los_ray.force_raycast_update()
+	if _los_ray.is_colliding():
+		var collider := _los_ray.get_collider()
+		return collider != null and collider.is_in_group("player")
+	return true
 
 
 func _detect_player() -> bool:
@@ -388,9 +453,22 @@ func take_damage(amount: float, from_direction: Vector3 = Vector3.ZERO) -> void:
 	_spawn_blood_puff()
 	if health <= 0.0:
 		_die()
-	else:
-		if current_state != State.COMBAT:
-			current_state = State.COMBAT
+		return
+
+	# Flinch (brief stagger) and whip around toward the shooter.
+	if _animator != null:
+		_animator.flinch()
+	if from_direction.length_squared() > 0.0001:
+		# from_direction = bullet travel direction; the shooter is behind it.
+		_snap_face_target(global_position - from_direction)
+	elif player_ref != null:
+		# The player is the only damage source in the demo.
+		_snap_face_target(player_ref.global_position)
+	if current_state != State.COMBAT:
+		current_state = State.COMBAT
+		_burst_shots_left = 0
+		_burst_cooldown = 0.5  # short reaction beat before returning fire
+		_lost_sight_timer = 0.0
 
 
 func _spawn_blood_puff() -> void:
@@ -459,18 +537,27 @@ func _shoot() -> void:
 	flash.light_color = Color(1.0, 0.75, 0.4)
 	flash.light_energy = 1.4
 	flash.omni_range = 3.5
-	flash.position = Vector3(0, 1.35, 0.45)
+	flash.position = Vector3(0, 1.35, -0.45)  # character faces local -Z
 	add_child(flash)
 	get_tree().create_timer(0.05).timeout.connect(func() -> void:
 		if is_instance_valid(flash):
 			flash.queue_free()
 	)
 
+	# HL2 NPC fire is inaccurate by design: shots whiff around the player so
+	# bursts feel dangerous without being a laser. Hit chance falls with range.
+	var dist := global_position.distance_to(player_ref.global_position)
+	var hit_chance := clampf(0.8 - dist * 0.03, 0.25, 0.8)
+	var aim_point := player_ref.global_position + Vector3(0, 0.9, 0)
+	if randf() > hit_chance:
+		aim_point += Vector3(
+			randf_range(-0.8, 0.8), randf_range(-0.5, 0.7), randf_range(-0.8, 0.8))
+
 	# Raycast check toward player
 	var space_state := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(
 		global_position + Vector3(0, 0.9, 0),
-		player_ref.global_position + Vector3(0, 0.9, 0),
+		aim_point,
 		0xFFFFFFFF,
 		[self]
 	)
@@ -509,11 +596,38 @@ func _line_duration(line_key: String) -> float:
 	return 2.0
 
 
+## Rotate so the CHARACTER faces `dir`. The MDL model child is spawned with a
+## 180° yaw, so the character's visual forward is the node's local -Z (matching
+## Godot convention). atan2(-x, -z) points -Z down `dir`.
 func _face_direction(dir: Vector3, delta: float) -> void:
 	if dir.length() < 0.01:
 		return
-	var target_angle := atan2(dir.x, dir.z)
+	var target_angle := atan2(-dir.x, -dir.z)
 	rotation.y = lerp_angle(rotation.y, target_angle, 10.0 * delta)
+
+
+## Instantly snap to face a world position (damage reactions).
+func _snap_face_target(target_pos: Vector3) -> void:
+	var dir := target_pos - global_position
+	dir.y = 0.0
+	if dir.length() < 0.01:
+		return
+	rotation.y = atan2(-dir.x, -dir.z)
+
+
+## Character's visual forward in world space.
+func _facing_forward() -> Vector3:
+	return -global_transform.basis.z
+
+
+## True when the character is aimed within ~25 deg of the target (dot > 0.9).
+## HL2 NPCs never fire while pointing elsewhere; neither do we.
+func _is_facing(target_pos: Vector3, min_dot: float = FACING_DOT_MIN) -> bool:
+	var dir := target_pos - global_position
+	dir.y = 0.0
+	if dir.length() < 0.01:
+		return true
+	return _facing_forward().dot(dir.normalized()) > min_dot
 
 
 func _face_target(target_pos: Vector3, delta: float) -> void:

@@ -32,12 +32,16 @@ const FAST_CHANNELS: Dictionary = {
 	"spine_sway": true, "pelvis_drop": true,
 }
 
+const FLINCH_TIME: float = 0.35       # damage stagger duration (s)
+
 var _skeleton: Skeleton3D = null
 var _pose: Pose = Pose.IDLE
 var _speed: float = 0.0               # horizontal speed (m/s), set by owner
 var _phase: float = 0.0               # walk cycle phase
 var _time: float = 0.0
 var _idle_seed: float = 0.0           # desync idle breathing between NPCs
+var _flinch_timer: float = 0.0        # >0 while staggering from a hit
+var _flinch_side: float = 1.0         # randomized recoil side
 
 # Cached per-bone data
 var _bones: Dictionary = {}           # short name -> bone idx
@@ -133,11 +137,19 @@ func set_speed(speed: float) -> void:
 	_speed = speed
 
 
+## Brief damage stagger: torso/head recoil that decays over FLINCH_TIME.
+## Applied additively after the channel blender so it reads instantly.
+func flinch() -> void:
+	_flinch_timer = FLINCH_TIME
+	_flinch_side = 1.0 if randf() < 0.5 else -1.0
+
+
 func _process(delta: float) -> void:
 	if _skeleton == null or not is_instance_valid(_skeleton):
 		return
 	_time += delta
 	_phase += _speed * WALK_CYCLE_SPEED * delta
+	_flinch_timer = maxf(0.0, _flinch_timer - delta)
 
 	_compute_target_pose()
 	_blend_channels(delta)
@@ -274,6 +286,12 @@ func _blend_channels(delta: float) -> void:
 func _apply_pose() -> void:
 	var c := _current
 
+	# Damage flinch: additive (bypasses the blender — must snap on instantly).
+	# Torso whips back and to one side, head snaps back, then decays.
+	var flinch_amt := 0.0
+	if _flinch_timer > 0.0:
+		flinch_amt = _flinch_timer / FLINCH_TIME
+
 	# Pelvis: vertical drop (crouch/walk bob) applied to position
 	if _bones.has("pelvis"):
 		var idx: int = _bones["pelvis"]
@@ -281,8 +299,10 @@ func _apply_pose() -> void:
 		_skeleton.set_bone_pose_position(idx, rest.origin + Vector3(0, c["pelvis_drop"], 0))
 
 	# Spine: lean forward (about +X by +angle moves chest toward +Z) and sway
-	var lean := Quaternion(Vector3(1, 0, 0), c["spine_lean"] * 0.5)
-	var sway := Quaternion(Vector3(0, 0, 1), c["spine_sway"] * 0.5)
+	var lean := Quaternion(Vector3(1, 0, 0),
+		c["spine_lean"] * 0.5 - flinch_amt * deg_to_rad(14.0) * 0.5)
+	var sway := Quaternion(Vector3(0, 0, 1),
+		c["spine_sway"] * 0.5 + flinch_amt * _flinch_side * deg_to_rad(8.0) * 0.5)
 	for sb in ["spine1", "spine2"]:
 		if _bones.has(sb):
 			_set_bone(_bones[sb], sway * lean)
@@ -290,8 +310,8 @@ func _apply_pose() -> void:
 	# Head/neck (positive pitch = nod forward/down)
 	if _bones.has("head"):
 		_set_bone(_bones["head"],
-			Quaternion(Vector3(0, 1, 0), c["head_yaw"])
-			* Quaternion(Vector3(1, 0, 0), c["head_pitch"]))
+			Quaternion(Vector3(0, 1, 0), c["head_yaw"] + flinch_amt * _flinch_side * deg_to_rad(10.0))
+			* Quaternion(Vector3(1, 0, 0), c["head_pitch"] - flinch_amt * deg_to_rad(16.0)))
 
 	# Arms. Lowering: rotate about +Z — left arm (+X side) by -angle, right by +angle.
 	# Forward swing: rotate about +X by -angle (moves arm toward +Z).
