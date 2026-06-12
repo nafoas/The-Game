@@ -305,12 +305,19 @@ const TEXTURE_PATH_ALIASES := {
 	# Weathered stand-ins of the same material family (rusty/painted metal,
 	# concrete, junk sheets) — UVs differ but they read correctly in-game,
 	# which beats flat white.
-	"models/props_lab/dogdumpster_sheet": "models/props_debris/debrisdog001_sheet",
+	# Mostly-uniform brush textures stand in for prop sheets whose art is
+	# missing: with mismatched UVs a uniform texture still reads correctly,
+	# while high-contrast sheets (planks, composites) turn into garbled stripes.
+	# Green rusted metal = the HL2 dumpster's painted steel.
+	"models/props_lab/dogdumpster_sheet": "metal/bunker_metalwall02a",
 	"models/props_c17/oil_drum001a": "models/props_c17/canister02a",
 	"models/props_c17/canister_propane01a": "models/props_c17/canister02a",
-	"models/props_c17/lockers001a": "models/props_silo/nucleartestcabinet",
+	# Green painted metal reads like the HL2 locker bank; the previous
+	# nucleartestcabinet stand-in rendered near-white in game lighting.
+	"models/props_c17/lockers001a": "metal/bunker_metalwall02a",
 	"models/props_junk/i-beam_cluster01": "models/props_radiostation/metal_truss",
-	"models/props_wasteland/barricade_composite01": "models/props_wasteland/fence_sheet01",
+	# Hazard stripes = the road-barricade look of barricade_composite01.
+	"models/props_wasteland/barricade_composite01": "metal/metal_emergencystripe01a",
 	"models/props_wasteland/prison_yard001": "models/props_wasteland/fence_sheet01",
 	"models/props_debris/rebar_concrete001": "models/props_debris/concretefloor030a",
 	"models/props_debris/plasterwall021a": "models/props_debris/concretefloor013a",

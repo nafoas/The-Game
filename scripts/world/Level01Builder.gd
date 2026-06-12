@@ -570,7 +570,9 @@ func _build_staging_area() -> void:
 	_prop(root, "generator", Vector3(7.2, 0.07, -4.6), 25.0)
 	_looping_sound(root, Vector3(7.2, 0.8, -4.6),
 		"res://sounds/ambient/levels/caves/rumble3.wav", -16.0, 10.0)
-	_prop(root, "equipment", Vector3(-2.6, 0.07, 4.2), 180.0)
+	# generator_b instead of "equipment": equipment1's real texture is a
+	# near-white silo cabinet and reads as an untextured block outdoors.
+	_prop(root, "generator_b", Vector3(-2.6, 0.07, 4.2), 180.0)
 	_prop(root, "handtruck", Vector3(6.0, 0.07, 3.6), -120.0)
 	_prop(root, "propane_big", Vector3(7.6, 0.07, -2.8), 0.0)
 	_prop(root, "oildrum", Vector3(-7.4, 0.43, 3.2), 40.0)
@@ -582,7 +584,9 @@ func _build_staging_area() -> void:
 	for leg_off in [Vector3(-0.8, 0.25, -0.35), Vector3(0.8, 0.25, -0.35),
 			Vector3(-0.8, 0.25, 0.35), Vector3(0.8, 0.25, 0.35)]:
 		_deco(root, Vector3(1.5, 0, 1.4) + leg_off, Vector3(0.07, 0.5, 0.07), metal)
-	_prop(root, "monitor", Vector3(1.2, 0.55, 1.3), 160.0)
+	# Screen faces the spawn walkway; the casing's rear UVs land on a white
+	# patch of the stand-in monitor texture and read as an untextured box.
+	_prop(root, "monitor", Vector3(1.2, 0.55, 1.3), -20.0)
 	_prop(root, "receiver_b", Vector3(2.0, 0.63, 1.5), 200.0)
 	_prop(root, "stool", Vector3(0.6, 0.07, 0.4), 30.0)
 
@@ -893,7 +897,8 @@ func _build_interior() -> void:
 	_prop(root, "receiver_d", Vector3(3.4, 0.58, bz + 4.7), 160.0)
 	_prop(root, "monitor_sm", Vector3(1.3, 0.69, bz + 4.65), 185.0)
 	_prop(root, "console", Vector3(2.4, 0.54, bz + 4.4), 180.0)
-	_prop(root, "equipment", Vector3(4.5, 0.12, bz + 5.2), 180.0)
+	# Lockers instead of the near-white equipment1 cabinet (see staging area).
+	_prop(root, "lockers", Vector3(4.5, 0.12, bz + 5.2), 180.0)
 	_prop(root, "stool", Vector3(2.4, 0.12, bz + 3.6), 200.0)
 	# Glow from the radio gear
 	_omni(root, Vector3(2.4, 1.1, bz + 4.4), Color(0.5, 0.85, 0.5), 0.5, 2.5)
