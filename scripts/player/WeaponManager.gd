@@ -25,10 +25,11 @@ const WEAPON_DEFS: Dictionary = {
 			"res://sounds/weapons/alyx_gun/alyx_gun_fire4.wav",
 		],
 		# Viewmodel: real HL2 model held under the camera.
-		# Alyx gun MDL muzzle natively points -Z; slight pitch-up correction.
+		# Alyx gun MDL muzzle natively points -Z. Slight inward yaw + roll
+		# matches the HL2 viewmodel cant.
 		"model": "res://models/weapons/w_alyx_gun.mdl",
-		"model_pos": Vector3(0.0, 0.08, 0.04),
-		"model_rot": Vector3(8.0, -8.0, 0.0),
+		"model_pos": Vector3(0.0, 0.0, 0.0),
+		"model_rot": Vector3(0.0, 2.0, -2.0),
 		"model_scale": 1.25,
 		"muzzle_z": -0.32,
 	},
@@ -44,10 +45,11 @@ const WEAPON_DEFS: Dictionary = {
 			"res://sounds/weapons/alyx_gun/alyx_gun_fire5.wav",
 			"res://sounds/weapons/alyx_gun/alyx_gun_fire6.wav",
 		],
-		# Combine sniper MDL muzzle natively points -X; yaw -90 points it -Z.
+		# Combine sniper MDL muzzle natively points -X; yaw -90 points it -Z
+		# (-91 foreshortens the long barrel slightly, +1 pitch lifts the tip).
 		"model": "res://models/weapons/w_combine_sniper.mdl",
-		"model_pos": Vector3(-0.03, 0.0, 0.16),
-		"model_rot": Vector3(-4.0, -96.0, 0.0),
+		"model_pos": Vector3(-0.03, -0.02, 0.08),
+		"model_rot": Vector3(1.0, -91.0, -2.0),
 		"model_scale": 0.45,
 		"muzzle_z": -0.55,
 	},
@@ -72,7 +74,10 @@ var _reload_timer: float = 0.0
 var _viewmodel: Node3D = null
 var _gun_holder: Node3D = null
 var _gun_tween: Tween = null
-var _viewmodel_base_pos := Vector3(0.27, -0.22, -0.5)
+# HL2-style anchor: close to the camera, low and to the right, so the rear
+# of the weapon reads large while perspective pulls the muzzle toward the
+# screen centre and the grip is cut off by the bottom screen edge.
+var _viewmodel_base_pos := Vector3(0.17, -0.11, -0.30)
 var _recoil_z: float = 0.0
 var _sway := Vector2.ZERO
 var _mouse_accum := Vector2.ZERO
@@ -572,8 +577,10 @@ func _play_reload_anim() -> void:
 	if _gun_holder == null:
 		return
 	_kill_gun_tween()
-	var down_pos := Vector3(0.03, -0.13, 0.07)
-	var down_rot := Vector3(-25.0, 6.0, 10.0)
+	# Keep the weapon partially on screen while lowered (the viewmodel sits
+	# close to the camera, so even a small drop moves it a long way on screen).
+	var down_pos := Vector3(0.02, -0.07, 0.04)
+	var down_rot := Vector3(-18.0, 6.0, 8.0)
 	var hold := maxf(RELOAD_TIME - 0.35 - 0.3 - 0.05, 0.1)
 	_gun_tween = create_tween()
 	_gun_tween.tween_property(_gun_holder, "position", down_pos, 0.35) \
