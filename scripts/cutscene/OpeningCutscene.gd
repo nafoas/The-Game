@@ -116,12 +116,16 @@ func _build_transport_interior() -> void:
 		Vector3(-1.0, 0.1, -1.4), 75.0, 1.27, true)
 	if marine_a == null:
 		_marine_capsule(Vector3(-1.1, 0.95, -1.6))
+	else:
+		NPCAnimator.attach(marine_a)
 	# NOTE: eli.mdl renders with a white head (its face texture doesn't ship),
 	# so the second squadmate reuses the fully-textured barney model.
 	var marine_b := SourceMaterials.spawn_model(self, "res://models/barney.mdl",
 		Vector3(-0.95, 0.1, 0.9), 100.0, 1.27, true)
 	if marine_b == null:
 		_marine_capsule(Vector3(-1.1, 0.95, 0.8))
+	else:
+		NPCAnimator.attach(marine_b)
 
 	# Dim flickering interior light
 	_flicker_light = OmniLight3D.new()

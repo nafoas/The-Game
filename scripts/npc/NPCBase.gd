@@ -43,6 +43,7 @@ var _mesh_instance: MeshInstance3D = null
 var _model_node: Node3D = null
 var _collision_shape: CollisionShape3D = null
 var _combat_taunt_timer: float = 0.0
+var _animator: NPCAnimator = null
 
 # Talking animation state
 var _talk_tween: Tween = null
@@ -110,6 +111,7 @@ func _build_visuals() -> void:
 		_model_node = SourceMaterials.spawn_model(self, path, Vector3.ZERO, 180.0, MODEL_SCALE, true)
 
 	if _model_node != null:
+		_animator = NPCAnimator.attach(_model_node)
 		return
 
 	# Fallback: legacy capsule
@@ -214,6 +216,24 @@ func _physics_process(delta: float) -> void:
 
 	_run_state_machine(delta)
 	move_and_slide()
+	_update_animation()
+
+
+func _update_animation() -> void:
+	if _animator == null:
+		return
+	var hspeed := Vector2(velocity.x, velocity.z).length()
+	_animator.set_speed(hspeed)
+	match current_state:
+		State.DEAD:
+			_animator.set_pose(NPCAnimator.Pose.DEAD)
+		State.COMBAT, State.ALERT:
+			_animator.set_pose(NPCAnimator.Pose.COMBAT)
+		_:
+			if hspeed > 0.3:
+				_animator.set_pose(NPCAnimator.Pose.WALK)
+			else:
+				_animator.set_pose(NPCAnimator.Pose.IDLE)
 
 
 func _run_state_machine(delta: float) -> void:
@@ -401,6 +421,9 @@ func _spawn_blood_puff() -> void:
 func _die() -> void:
 	current_state = State.DEAD
 	velocity = Vector3.ZERO
+	if _animator != null:
+		_animator.set_speed(0.0)
+		_animator.set_pose(NPCAnimator.Pose.DEAD)
 	_play_voice("death_01")
 	SubtitleManager.show_subtitle_direct(npc_name + " is down.", 2.0, npc_name)
 
