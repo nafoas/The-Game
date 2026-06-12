@@ -438,7 +438,12 @@ func _fire_shot(def: Dictionary) -> void:
 	var hit_normal: Vector3 = result["normal"]
 
 	if collider != null and collider.has_method("take_damage"):
-		collider.take_damage(float(def["damage"]))
+		# NPCs take the bullet travel direction too (flinch facing + ragdoll
+		# knockback on the killing shot). The player overload takes no direction.
+		if collider is Node and (collider as Node).is_in_group("npc"):
+			collider.take_damage(float(def["damage"]), dir)
+		else:
+			collider.take_damage(float(def["damage"]))
 	else:
 		_spawn_impact(hit_pos, hit_normal)
 

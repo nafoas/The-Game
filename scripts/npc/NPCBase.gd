@@ -452,7 +452,7 @@ func take_damage(amount: float, from_direction: Vector3 = Vector3.ZERO) -> void:
 	_play_voice("pain_01")
 	_spawn_blood_puff()
 	if health <= 0.0:
-		_die()
+		_die(from_direction)
 		return
 
 	# Flinch (brief stagger) and whip around toward the shooter.
@@ -501,16 +501,33 @@ func _spawn_blood_puff() -> void:
 	)
 
 
-func _die() -> void:
+func _die(hit_dir: Vector3 = Vector3.ZERO) -> void:
 	current_state = State.DEAD
 	velocity = Vector3.ZERO
-	if _animator != null:
-		_animator.set_speed(0.0)
-		_animator.set_pose(NPCAnimator.Pose.DEAD)
 	_play_voice("death_01")
 	SubtitleManager.show_subtitle_direct(npc_name + " is down.", 2.0, npc_name)
 
-	# Tween to fall over
+	# Source-style ragdoll: the skeleton hands over to jointed rigid bodies and
+	# the corpse crumples under gravity (with knockback from the killing shot).
+	var ragdoll := NPCRagdoll.create(self, _model_node, hit_dir)
+	if ragdoll != null:
+		if _animator != null:
+			_animator.set_process(false)  # stop fighting the physics bones
+		_stop_talking()
+		# Gameplay capsule out of the way immediately so the ragdoll owns the
+		# space (deferred: we may be inside the physics flush).
+		set_deferred("collision_layer", 0)
+		if _collision_shape != null:
+			_collision_shape.set_deferred("disabled", true)
+		# Let the corpse settle and linger, then clean up (frees the ragdoll too).
+		await get_tree().create_timer(12.0).timeout
+		queue_free()
+		return
+
+	# Fallback (capsule placeholder NPCs): limp pose + tip-over tween.
+	if _animator != null:
+		_animator.set_speed(0.0)
+		_animator.set_pose(NPCAnimator.Pose.DEAD)
 	var tween := create_tween()
 	tween.tween_property(self, "rotation:x", deg_to_rad(80.0), 0.5)
 
