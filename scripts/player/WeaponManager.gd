@@ -459,15 +459,18 @@ func _spawn_impact(pos: Vector3, normal: Vector3) -> void:
 	dust.initial_velocity_min = 0.4
 	dust.initial_velocity_max = 1.1
 	dust.gravity = Vector3(0, -0.6, 0)
-	dust.scale_amount_min = 0.05
-	dust.scale_amount_max = 0.14
+	# NOTE: keep the quad itself puff-sized — relying on scale_amount alone
+	# leaves metre-wide squares (see SourceMaterials.add_dust_motes).
+	dust.scale_amount_min = 0.5
+	dust.scale_amount_max = 1.4
 	var dquad := QuadMesh.new()
-	dquad.size = Vector2(1.0, 1.0)
+	dquad.size = Vector2(0.1, 0.1)
 	var dustmat := StandardMaterial3D.new()
 	dustmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	dustmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	dustmat.albedo_color = Color(0.55, 0.52, 0.46, 0.4)
 	dustmat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	dustmat.albedo_texture = SourceMaterials.soft_radial_texture()
 	dquad.material = dustmat
 	dust.mesh = dquad
 	dust.emitting = true
@@ -484,14 +487,17 @@ func _spawn_impact(pos: Vector3, normal: Vector3) -> void:
 	sparks.initial_velocity_min = 2.0
 	sparks.initial_velocity_max = 4.0
 	sparks.gravity = Vector3(0, -9.0, 0)
-	sparks.scale_amount_min = 0.012
-	sparks.scale_amount_max = 0.03
+	sparks.scale_amount_min = 0.5
+	sparks.scale_amount_max = 1.2
 	var smesh := QuadMesh.new()
-	smesh.size = Vector2(1.0, 1.0)
+	smesh.size = Vector2(0.025, 0.025)
 	var smat := StandardMaterial3D.new()
 	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	smat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	smat.albedo_color = Color(1.0, 0.85, 0.45)
 	smat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	smat.albedo_texture = SourceMaterials.soft_radial_texture()
 	smesh.material = smat
 	sparks.mesh = smesh
 	sparks.emitting = true

@@ -408,8 +408,128 @@ static func add_dust_motes(parent: Node, pos: Vector3, extents: Vector3,
 	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	m.albedo_color = Color(0.9, 0.85, 0.7, 0.18)
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.albedo_texture = soft_radial_texture()
 	mesh.material = m
 	p.mesh = mesh
 	p.position = pos
 	parent.add_child(p)
 	return p
+
+
+## Soft radial sprite (bright centre fading to fully transparent edge).
+## ALWAYS use this (or another soft texture) as the albedo of particle quads:
+## a flat-colour quad has hard edges and, with glow + ACES tonemapping,
+## renders as a large solid rectangle (esp. under llvmpipe).
+static func soft_radial_texture(size: int = 64) -> GradientTexture2D:
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.4, 1.0])
+	g.colors = PackedColorArray([
+		Color(1, 1, 1, 1.0),
+		Color(1, 1, 1, 0.45),
+		Color(1, 1, 1, 0.0),
+	])
+	var t := GradientTexture2D.new()
+	t.gradient = g
+	t.fill = GradientTexture2D.FILL_RADIAL
+	t.fill_from = Vector2(0.5, 0.5)
+	t.fill_to = Vector2(0.5, 0.0)
+	t.width = size
+	t.height = size
+	return t
+
+
+## HL2-style fire (env_fire): additive billboard flame sprites with a radial
+## soft texture and white->yellow->orange->out colour ramp, plus a few slow
+## dark smoke puffs above. Small quads + scale curve; no hard-edged geometry.
+static func add_fire(parent: Node, pos: Vector3, intensity: float = 1.0) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Fire"
+	parent.add_child(root)
+	root.position = pos
+
+	# --- Flames ---
+	var flames := CPUParticles3D.new()
+	flames.name = "Flames"
+	flames.amount = 20
+	flames.lifetime = 0.7
+	flames.preprocess = 1.2
+	flames.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	flames.emission_sphere_radius = 0.18 * intensity
+	flames.direction = Vector3(0, 1, 0)
+	flames.spread = 7.0
+	flames.gravity = Vector3(0, 1.5, 0)
+	flames.initial_velocity_min = 0.5
+	flames.initial_velocity_max = 1.1
+	flames.scale_amount_min = 0.55
+	flames.scale_amount_max = 1.25
+	var fcurve := Curve.new()
+	fcurve.add_point(Vector2(0.0, 0.55))
+	fcurve.add_point(Vector2(0.25, 1.0))
+	fcurve.add_point(Vector2(1.0, 0.05))
+	flames.scale_amount_curve = fcurve
+	var framp := Gradient.new()
+	framp.offsets = PackedFloat32Array([0.0, 0.22, 0.55, 0.85, 1.0])
+	framp.colors = PackedColorArray([
+		Color(1.0, 0.98, 0.85, 0.9),   # white-hot
+		Color(1.0, 0.82, 0.35, 0.85),  # yellow
+		Color(1.0, 0.45, 0.12, 0.7),   # orange
+		Color(0.55, 0.12, 0.03, 0.35), # dark red
+		Color(0.2, 0.05, 0.01, 0.0),   # out
+	])
+	flames.color_ramp = framp
+	var fmesh := QuadMesh.new()
+	fmesh.size = Vector2(0.3, 0.3) * intensity
+	var fmat := StandardMaterial3D.new()
+	fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	fmat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	fmat.vertex_color_use_as_albedo = true
+	fmat.albedo_texture = soft_radial_texture()
+	fmesh.material = fmat
+	flames.mesh = fmesh
+	flames.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(flames)
+
+	# --- Smoke above the flames ---
+	var smoke := CPUParticles3D.new()
+	smoke.name = "Smoke"
+	smoke.amount = 10
+	smoke.lifetime = 2.8
+	smoke.preprocess = 2.5
+	smoke.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	smoke.emission_sphere_radius = 0.15 * intensity
+	smoke.direction = Vector3(0, 1, 0)
+	smoke.spread = 10.0
+	smoke.gravity = Vector3(0.15, 0.5, 0.0)
+	smoke.initial_velocity_min = 0.45
+	smoke.initial_velocity_max = 0.85
+	smoke.scale_amount_min = 0.6
+	smoke.scale_amount_max = 1.2
+	var scurve := Curve.new()
+	scurve.add_point(Vector2(0.0, 0.4))
+	scurve.add_point(Vector2(1.0, 1.0))
+	smoke.scale_amount_curve = scurve
+	var sramp := Gradient.new()
+	sramp.offsets = PackedFloat32Array([0.0, 0.25, 1.0])
+	sramp.colors = PackedColorArray([
+		Color(0.1, 0.09, 0.08, 0.0),
+		Color(0.09, 0.09, 0.1, 0.3),
+		Color(0.08, 0.08, 0.09, 0.0),
+	])
+	smoke.color_ramp = sramp
+	var smesh := QuadMesh.new()
+	smesh.size = Vector2(0.45, 0.45) * intensity
+	var smat := StandardMaterial3D.new()
+	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	smat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	smat.vertex_color_use_as_albedo = true
+	smat.albedo_texture = soft_radial_texture()
+	smesh.material = smat
+	smoke.mesh = smesh
+	smoke.position = Vector3(0, 0.35 * intensity, 0)
+	smoke.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(smoke)
+
+	return root

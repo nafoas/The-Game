@@ -421,41 +421,12 @@ func _corpse(parent: Node, pos: Vector3, rot_y: float = 0.0) -> void:
 
 
 func _smoke_column(parent: Node, pos: Vector3) -> void:
-	var p := CPUParticles3D.new()
-	p.amount = 14
-	p.lifetime = 3.2
-	p.preprocess = 3.0
-	p.direction = Vector3(0, 1, 0)
-	p.spread = 9.0
-	p.gravity = Vector3(0.18, 0.55, 0.0)
-	p.initial_velocity_min = 0.5
-	p.initial_velocity_max = 0.9
-	p.scale_amount_min = 0.5
-	p.scale_amount_max = 1.4
-	p.scale_amount_curve = _ramp_curve()
-	var mesh := QuadMesh.new()
-	mesh.size = Vector2(1.0, 1.0)
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.albedo_color = Color(0.06, 0.06, 0.07, 0.32)
-	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	m.vertex_color_use_as_albedo = false
-	mesh.material = m
-	p.mesh = mesh
-	p.position = pos
-	parent.add_child(p)
+	# Soft additive flame sprites + dark smoke (no hard-edged quads).
+	SourceMaterials.add_fire(parent, pos, 1.0)
 
-	# Smouldering ember glow
-	var ember := _omni(parent, pos + Vector3(0, 0.3, 0), Color(1.0, 0.45, 0.12), 0.9, 4.0)
+	# Flickering fire glow
+	var ember := _omni(parent, pos + Vector3(0, 0.4, 0), Color(1.0, 0.5, 0.15), 0.8, 4.5)
 	_add_flicker(ember)
-
-
-func _ramp_curve() -> Curve:
-	var c := Curve.new()
-	c.add_point(Vector2(0.0, 0.35))
-	c.add_point(Vector2(1.0, 1.0))
-	return c
 
 
 func _ambient_zone(pos: Vector3, size: Vector3, sound_path: String, vol_db: float) -> void:
