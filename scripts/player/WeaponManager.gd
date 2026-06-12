@@ -32,6 +32,12 @@ const WEAPON_DEFS: Dictionary = {
 		"model_rot": Vector3(0.0, 2.0, -2.0),
 		"model_scale": 1.25,
 		"muzzle_z": -0.32,
+		# HL2 pistol shows a single hand wrapped around the grip, forearm
+		# running off the bottom-right screen edge.
+		"hands": [
+			{"arm": "grip", "target": Vector3(0.0, -0.085, 0.105),
+				"rot": Vector3(-35.0, 155.0, 10.0), "scale": 1.15},
+		],
 	},
 	"mp5": {
 		"damage": 8.0,
@@ -52,8 +58,32 @@ const WEAPON_DEFS: Dictionary = {
 		"model_rot": Vector3(1.0, -91.0, -2.0),
 		"model_scale": 0.45,
 		"muzzle_z": -0.55,
+		# Two-handed: trigger hand at the grip, open support palm cradling
+		# the fore-end (HL2 SMG stance).
+		"hands": [
+			{"arm": "grip", "target": Vector3(0.0, -0.06, 0.16),
+				"rot": Vector3(-35.0, 155.0, 10.0), "scale": 1.15},
+			{"arm": "open", "target": Vector3(0.025, -0.105, -0.12),
+				"rot": Vector3(-45.0, 195.0, 25.0), "scale": 1.15},
+		],
 	},
 }
+
+# --- Viewmodel hands ---------------------------------------------------------
+# v_magnade.mdl is the only HL2 v_ (first-person) model in the ported assets.
+# Its third surface is the player's bare hands + forearms in bind pose (the
+# v_hand_sheet texture never shipped, so we light it with flat materials).
+# In mesh space the gripping right arm sits at x < 0 with its fist closed
+# around the grenade; the open left palm sits at x > 0.
+const HANDS_MDL := "res://models/weapons/v_magnade.mdl"
+const HANDS_SURFACE := 2
+# Reference points in v_magnade mesh space (probed from the import):
+# centre of the gripped grenade, and centre of the open palm.
+const HANDS_GRIP_POINT := Vector3(-0.079, 1.157, 0.575)
+const HANDS_PALM_POINT := Vector3(0.125, 0.975, 0.465)
+# Wrist cuff line (mesh-space z) separating skin from shirt sleeve, per arm.
+const HANDS_SLEEVE_Z_GRIP := 0.46
+const HANDS_SLEEVE_Z_OPEN := 0.40
 
 const RELOAD_SOUND_CANDIDATES: Array = [
 	"res://sounds/weapons/pistol/pistol_reload1.wav",
@@ -77,12 +107,14 @@ var _gun_tween: Tween = null
 # HL2-style anchor: close to the camera, low and to the right, so the rear
 # of the weapon reads large while perspective pulls the muzzle toward the
 # screen centre and the grip is cut off by the bottom screen edge.
-var _viewmodel_base_pos := Vector3(0.17, -0.11, -0.30)
+var _viewmodel_base_pos := Vector3(0.165, -0.06, -0.30)
 var _recoil_z: float = 0.0
 var _sway := Vector2.ZERO
 var _mouse_accum := Vector2.ZERO
 var _bob_time: float = 0.0
 var _bloom: float = 0.0
+
+var _hands_meshes: Dictionary = {}  # "grip"/"open" -> ArrayMesh (lazy cache)
 
 var _muzzle_light: OmniLight3D = null
 var _muzzle_quad: MeshInstance3D = null
@@ -217,11 +249,123 @@ func _refresh_viewmodel() -> void:
 		gun.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_gun_holder.add_child(gun)
 
+	# HL2-style hands gripping the weapon. Children of the gun holder so the
+	# fire-kick and reload tweens move the hands together with the gun.
+	if spawned != null:
+		for hand_def in def.get("hands", []):
+			_spawn_hand(hand_def)
+
 	var muzzle_z: float = def.get("muzzle_z", -0.3)
 	if _muzzle_light != null:
 		_muzzle_light.position = Vector3(0.0, 0.06, muzzle_z)
 	if _muzzle_quad != null:
 		_muzzle_quad.position = Vector3(0.0, 0.06, muzzle_z - 0.02)
+
+
+# ---------------------------------------------------------------------------
+# Hands (extracted from the v_magnade viewmodel MDL)
+# ---------------------------------------------------------------------------
+
+## Add one arm to the gun holder. hand_def keys: "arm" ("grip"/"open"),
+## "target" (holder-space point the hand should hold), "rot", "scale".
+func _spawn_hand(hand_def: Dictionary) -> void:
+	var arm: String = hand_def.get("arm", "grip")
+	var mesh := _get_hands_mesh(arm)
+	if mesh == null:
+		return
+	var mi := MeshInstance3D.new()
+	mi.name = "Hand_" + arm
+	mi.mesh = mesh
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_gun_holder.add_child(mi)
+
+	mi.rotation_degrees = hand_def.get("rot", Vector3.ZERO)
+	mi.scale = Vector3.ONE * float(hand_def.get("scale", 1.0))
+	# Place the arm so its reference point (fist / palm centre) lands exactly
+	# on the requested holder-space target. The basis already carries both the
+	# rotation and the scale at this point.
+	var ref_point := HANDS_GRIP_POINT if arm == "grip" else HANDS_PALM_POINT
+	var target: Vector3 = hand_def.get("target", Vector3.ZERO)
+	mi.position = target - mi.basis * ref_point
+
+
+## Build (and cache) a static bind-pose ArrayMesh for one arm out of the
+## v_magnade hands surface. Two sub-surfaces: skin and shirt sleeve.
+func _get_hands_mesh(arm: String) -> ArrayMesh:
+	if _hands_meshes.has(arm):
+		return _hands_meshes[arm]
+	_hands_meshes[arm] = null  # never retry a failed extraction
+
+	if not ResourceLoader.exists(HANDS_MDL):
+		return null
+	var ps := load(HANDS_MDL) as PackedScene
+	if ps == null:
+		return null
+	var inst := ps.instantiate()
+	var src: MeshInstance3D = inst as MeshInstance3D
+	if src == null:
+		for child in inst.get_children():
+			if child is MeshInstance3D:
+				src = child
+				break
+	var src_mesh: ArrayMesh = null
+	if src != null:
+		src_mesh = src.mesh as ArrayMesh
+	if src_mesh == null or src_mesh.get_surface_count() <= HANDS_SURFACE:
+		inst.free()
+		return null
+
+	var arrays := src_mesh.surface_get_arrays(HANDS_SURFACE)
+	inst.free()
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var want_grip := arm == "grip"
+	var sleeve_z := HANDS_SLEEVE_Z_GRIP if want_grip else HANDS_SLEEVE_Z_OPEN
+
+	# Partition triangles: arm side by mesh x sign, skin vs sleeve by z.
+	var skin_idx := PackedInt32Array()
+	var sleeve_idx := PackedInt32Array()
+	for t in range(0, indices.size() - 2, 3):
+		var c := (verts[indices[t]] + verts[indices[t + 1]] + verts[indices[t + 2]]) / 3.0
+		if (c.x < 0.0) != want_grip:
+			continue
+		if c.z >= sleeve_z:
+			skin_idx.append_array([indices[t], indices[t + 1], indices[t + 2]])
+		else:
+			sleeve_idx.append_array([indices[t], indices[t + 1], indices[t + 2]])
+	if skin_idx.is_empty() and sleeve_idx.is_empty():
+		return null
+
+	var out := ArrayMesh.new()
+	var parts: Array = [[skin_idx, _hand_material(true)], [sleeve_idx, _hand_material(false)]]
+	for part in parts:
+		var part_idx: PackedInt32Array = part[0]
+		if part_idx.is_empty():
+			continue
+		var a := []
+		a.resize(Mesh.ARRAY_MAX)
+		a[Mesh.ARRAY_VERTEX] = verts
+		a[Mesh.ARRAY_NORMAL] = arrays[Mesh.ARRAY_NORMAL]
+		a[Mesh.ARRAY_INDEX] = part_idx
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a)
+		out.surface_set_material(out.get_surface_count() - 1, part[1])
+	_hands_meshes[arm] = out
+	return out
+
+
+func _hand_material(skin: bool) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	if skin:
+		mat.albedo_color = Color(0.62, 0.45, 0.34)
+		mat.roughness = 0.92
+	else:
+		# Rolled-up olive shirt sleeve (resistance citizen).
+		mat.albedo_color = Color(0.32, 0.34, 0.25)
+		mat.roughness = 1.0
+	# The forearm crosses the near plane at the screen edge; rendering the
+	# backfaces hides the hollow interior of the clipped mesh.
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return mat
 
 
 func _disable_shadows(node: Node) -> void:
