@@ -1,5 +1,5 @@
 """
-Hunt Down Joe Biden — Installer
+Hunt Down Joe Biden — Installer v1.0
 Checks prerequisites, clones the game repo (with all LFS assets),
 downloads Godot 4.4, creates a launcher and desktop shortcut.
 """
