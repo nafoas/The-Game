@@ -80,8 +80,7 @@ func _on_player_died() -> void:
 	_dying = false
 
 	get_tree().paused = false
-	var current_path := get_tree().current_scene.scene_file_path
-	_change_scene(current_path)
+	get_tree().reload_current_scene()
 
 	# Wait for the reloaded scene to be fully ready (its _ready may reset
 	# checkpoint_position to the level start), then restore our checkpoint.
@@ -109,7 +108,7 @@ func complete_level() -> void:
 	level_completed.emit()
 	get_tree().paused = false
 	if ResourceLoader.exists(END_OF_DEMO_SCENE):
-		_change_scene(END_OF_DEMO_SCENE)
+		get_tree().change_scene_to_file(END_OF_DEMO_SCENE)
 
 
 func new_game() -> void:
@@ -122,12 +121,7 @@ func new_game() -> void:
 	armor_changed.emit(player_armor)
 	get_tree().paused = false
 	if ResourceLoader.exists(OPENING_CUTSCENE_SCENE):
-		_change_scene(OPENING_CUTSCENE_SCENE)
-
-
-func _change_scene(path: String) -> void:
-	const LoadingScreen := preload("res://scripts/ui/LoadingScreen.gd")
-	LoadingScreen.load_scene(path)
+		get_tree().change_scene_to_file(OPENING_CUTSCENE_SCENE)
 
 
 # ---------------------------------------------------------------------------
