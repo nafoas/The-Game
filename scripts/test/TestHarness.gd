@@ -14,6 +14,8 @@ func _ready() -> void:
 	# Movie capture mode: run with
 	#   godot --path . --write-movie /tmp/capture/out.avi --fixed-fps 30 -- movie
 	# Plays short scripted scenes showcasing animation instead of taking stills.
+	if OS.get_cmdline_user_args().has("noharness"):
+		return  # debugging/probe sessions: leave the game alone
 	if OS.get_cmdline_user_args().has("movie"):
 		_run_movie.call_deferred()
 	else:
@@ -21,6 +23,10 @@ func _ready() -> void:
 
 
 func _run() -> void:
+	# The AI now actively hunts the player (hearing, squads, suppression), so
+	# keep the test driver alive through incidental fire like movie mode does.
+	_movie_keepalive = true
+	_movie_keepalive_loop()
 	await _wait(3.0)
 	await _shot("01_main_menu")
 
@@ -108,6 +114,7 @@ func _run() -> void:
 	await _shot("14_end_of_demo")
 
 	print("HARNESS: DONE")
+	_movie_keepalive = false
 	get_tree().quit(0)
 
 
@@ -130,13 +137,13 @@ func _run_movie() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	_movie_keepalive = true
 	_movie_keepalive_loop()
-	# Freeze AI aggression: everyone just idles/patrols until the finale, so
-	# scene 1 stays a clean one-on-one encounter.
+	# Freeze AI aggression: everyone just idles/wanders until each scene
+	# deliberately wakes them up.
 	_set_all_npcs_scripted(true)
 
+	await _movie_idle_life(player)
 	await _movie_combat(player)
-	await _movie_weapons(player)
-	await _movie_tour(player)
+	await _movie_squad(player)
 
 	print("HARNESS: MOVIE DONE")
 	_movie_keepalive = false
@@ -176,119 +183,124 @@ func _tap_action(action: String) -> void:
 	_send_action(action, false)
 
 
-## Scene 1 (~14s): an NPC walks across in front of the player (clean side-on
-## walk cycle), turns hostile, advances in combat stance, then the player
-## guns it down and the death animation plays out.
+## Scene 1 (~10s): actbusy idle life — the plaza guards (no waypoints) turn,
+## wander to nearby points and lean on walls while the player watches from
+## the plaza mouth. scripted_patrol only gates aggro, not the idle brain.
+func _movie_idle_life(player: CharacterBody3D) -> void:
+	print("HARNESS: movie scene 1 — idle wander/lean")
+	await _teleport(player, Vector3(0, 1.2, 61.0), 180.0)
+	# Watch the nearest plaza guard live its idle life (wander/turn/lean).
+	var subject := _find_nearest_npc(player)
+	for i in 20:
+		if subject != null and is_instance_valid(subject):
+			_face_point(player, subject.global_position + Vector3(0, 1.1, 0))
+		await _wait(0.5)
+
+
+## Scene 2 (~22s): senses + one-on-one combat. The player sneaks up BEHIND a
+## street NPC (no detection — vision cone), fires a shot (heard -> ALERT ->
+## turn -> COMBAT with the gun raised), trades fire, wounds it (stagger +
+## cover dash) and finally drops it (ragdoll).
 func _movie_combat(player: CharacterBody3D) -> void:
-	print("HARNESS: movie scene 1 — combat encounter")
+	print("HARNESS: movie scene 2 — senses and combat")
 	var npc := _find_nearest_npc(player)
 	if npc == null:
 		print("HARNESS: movie — no NPC available, skipping combat scene")
 		return
 
-	# Park the walker out of frame, then stage the walk only after the player
-	# is in position so the whole crossing is on camera.
-	if "scripted_patrol" in npc:
-		npc.scripted_patrol = true
-	npc.global_position = Vector3(-6.0, 0.5, 23.0)
-	await _teleport(player, Vector3(0, 1.2, 14), 180.0)
-
-	# Scripted walk: left-to-right across the view ~9 m ahead (full body above
-	# the HUD), then diagonally away — ends ~18 m out so the combat advance
-	# has room.
+	# Stage: NPC mid-street near the barricade cover, facing AWAY from the
+	# player (toward +Z). Player ~9 m behind it: inside DETECTION_RANGE and
+	# HEARING_RANGE but outside the 120° vision cone — it must NOT see us.
+	npc.global_position = Vector3(0.5, 0.5, 33.0)  # beside the barricade funnel (cover-rich)
 	if "waypoints" in npc:
-		var wp: Array[Vector3] = [Vector3(5.0, 0.5, 23.0), Vector3(3.0, 0.5, 32.0)]
+		var wp: Array[Vector3] = []
 		npc.waypoints = wp
 	if "current_state" in npc:
-		npc.current_state = 1  # PATROL
-		npc.current_waypoint = 0
-	# Track the walker with the camera during the walk-by (aim at the waist so
-	# the legs stay clear of the subtitle bar).
-	for i in 26:
+		npc.current_state = 0  # IDLE
+	npc.rotation.y = deg_to_rad(180.0)  # character -Z forward -> faces +Z (away)
+	# Pin the idle brain: no wandering off mid-beat (would drift out of the
+	# hearing radius and ruin the staged demonstration).
+	npc._idle_mode = 0  # IdleMode.STAND
+	npc._idle_timer = 999.0
+	npc.scripted_patrol = false
+	await _teleport(player, Vector3(0.5, 1.2, 24), 180.0)
+	_face_point(player, npc.global_position + Vector3(0, 1.0, 0))
+
+	# Beat 1: stand in plain "sight" behind its back — nothing happens.
+	for i in 10:
 		if not is_instance_valid(npc):
 			return
-		print("DBG walk i=%d pos=%v state=%s vel=%v roty=%.1f" % [i, npc.global_position, npc.current_state, npc.velocity, rad_to_deg(npc.rotation.y)])
-		_face_point(player, npc.global_position + Vector3(0, 0.8, 0))
+		print("DBG behind i=%d state=%s" % [i, npc.current_state])
+		await _wait(0.3)
+
+	# Beat 2: fire one shot into the air — it HEARS it, spins, spots us.
+	print("HARNESS: movie — firing a shot to be heard")
+	_face_point(player, npc.global_position + Vector3(0, 4.0, 0))  # miss high
+	await _tap_action("fire")
+	await _wait(0.3)
+	for i in 16:
+		if not is_instance_valid(npc):
+			return
+		print("DBG react i=%d pos=%v state=%s mode=%s" % [i, npc.global_position, npc.current_state, npc.get("_combat_mode")])
+		_face_point(player, npc.global_position + Vector3(0, 1.1, 0))
 		await _wait(0.25)
 
-	# Release the script: NPC detects the player, turns hostile, advances in
-	# combat stance until it reaches attack range, then opens fire.
-	if "scripted_patrol" in npc:
-		npc.scripted_patrol = false
-	for i in 12:
-		if not is_instance_valid(npc):
-			return
-		print("DBG adv i=%d pos=%v state=%s vel=%v roty=%.1f" % [i, npc.global_position, npc.current_state, npc.velocity, rad_to_deg(npc.rotation.y)])
+	# Beat 3: wound it twice — pronounced stagger, then a dash behind cover.
+	print("HARNESS: movie — wounding NPC")
+	for i in 2:
+		if not is_instance_valid(npc) or npc.current_state == 4:
+			break
+		_face_point(player, npc.global_position + Vector3(0, 1.15, 0))
+		await _tap_action("fire")
+		await _wait(0.9)
+	for i in 14:
+		if not is_instance_valid(npc) or npc.current_state == 4:
+			break
+		print("DBG cover i=%d pos=%v mode=%s" % [i, npc.global_position, npc.get("_combat_mode")])
 		_face_point(player, npc.global_position + Vector3(0, 1.0, 0))
 		await _wait(0.25)
 
-	# Player opens fire until the NPC drops.
-	print("HARNESS: movie — player firing")
-	for i in 12:
+	# Beat 4: finish it — ragdoll death.
+	print("HARNESS: movie — player firing to kill")
+	for i in 14:
 		if not is_instance_valid(npc):
 			break
-		if "current_state" in npc and npc.current_state == 4:  # DEAD
+		if npc.current_state == 4:  # DEAD
 			break
-		_face_point(player, npc.global_position + Vector3(0, 1.25, 0))
+		_face_point(player, npc.global_position + Vector3(0, 1.2, 0))
 		await _tap_action("fire")
 		await _wait(0.22)
-	# Hold on the death animation (fall tween + slump).
 	if is_instance_valid(npc):
-		_face_point(player, npc.global_position + Vector3(0, 0.6, 0))
-	await _wait(2.2)
-
-
-## Scene 2 (~9s): pistol shots with recoil, reload animation, switch to the
-## second weapon, automatic burst, switch back.
-func _movie_weapons(player: CharacterBody3D) -> void:
-	print("HARNESS: movie scene 2 — weapon showcase")
-	await _teleport(player, Vector3(0, 1.2, 5), 180.0)
-
-	# Three deliberate pistol shots (recoil kick).
-	for i in 3:
-		await _tap_action("fire")
-		await _wait(0.5)
-
-	# Reload animation.
-	await _tap_action("reload")
-	await _wait(1.9)
-
-	# Unlock + switch to the SMG, fire an automatic burst.
-	var wm := player.get_node_or_null("Head/WeaponManager")
-	if wm != null and wm.has_method("add_weapon"):
-		wm.add_weapon("mp5", 60)
-		await _wait(0.9)
-		_send_action("fire", true)
-		await _wait(1.3)
-		_send_action("fire", false)
-		await _wait(0.5)
-		# Back to the pistol, one last shot.
-		await _tap_action("weapon_1")
-		await _wait(0.8)
-		await _tap_action("fire")
-	await _wait(0.7)
-
-
-## Scene 3 (~11s): first-person walk down the street past the burning wreck,
-## flickering lamps and patrolling NPCs.
-func _movie_tour(player: CharacterBody3D) -> void:
-	print("HARNESS: movie scene 3 — world tour")
-	# Release the AI for a live finale as the player reaches the plaza.
-	_set_all_npcs_scripted(false)
-	await _teleport(player, Vector3(1.5, 1.2, 28), 180.0)
-
-	_send_action("move_forward", true)
-	await _wait(3.0)
-	# Glance toward the burning wreck while still walking.
-	var t := create_tween()
-	t.tween_property(player, "rotation:y", deg_to_rad(180.0 - 18.0), 0.8)
-	await _wait(2.4)
-	var t2 := create_tween()
-	t2.tween_property(player, "rotation:y", deg_to_rad(180.0), 0.8)
-	await _wait(2.6)
-	_send_action("move_forward", false)
-	# Hold the final shot — nearby patrols/firefight if any.
+		_face_point(player, npc.global_position + Vector3(0, 0.5, 0))
 	await _wait(2.0)
+
+
+## Scene 3 (~13s): squad firefight in the plaza — multiple NPCs coordinate:
+## the closest advances on the player while the others hold and suppress,
+## seek cover behind the concrete barriers and pop up to fire.
+func _movie_squad(player: CharacterBody3D) -> void:
+	print("HARNESS: movie scene 3 — squad firefight")
+	_set_all_npcs_scripted(false)
+	await _teleport(player, Vector3(0, 1.2, 56), 180.0)
+	_face_point(player, Vector3(0, 1.2, 70.0))
+	# Announce ourselves: one shot toward the fountain wakes the plaza squad.
+	await _tap_action("fire")
+	var watch_start := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - watch_start < 12000:
+		# Keep the camera on the action: face the nearest live hostile.
+		var npc := _find_nearest_npc(player)
+		if npc != null:
+			_face_point(player, npc.global_position + Vector3(0, 1.0, 0))
+			print("DBG squad state=%s mode=%s suppress=%s" % [npc.current_state, npc.get("_combat_mode"), npc.get("_squad_suppress")])
+		await _wait(0.4)
+	# Fight back briefly so the finale has both sides shooting.
+	for i in 6:
+		var npc := _find_nearest_npc(player)
+		if npc == null:
+			break
+		_face_point(player, npc.global_position + Vector3(0, 1.1, 0))
+		await _tap_action("fire")
+		await _wait(0.3)
 
 
 func _wait(seconds: float) -> void:

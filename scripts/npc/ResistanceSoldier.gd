@@ -40,9 +40,11 @@ func _physics_process(delta: float) -> void:
 func _play_voice(line_key: String) -> void:
 	match line_key:
 		"alert_01":
-			SubtitleManager.show_subtitle_direct("You'll never take him alive!", 2.5, "Resistance Fighter")
+			SubtitleManager.show_subtitle_direct("Soldiers! You'll never take him alive!", 2.5, "Resistance Fighter")
 		"pain_01":
 			SubtitleManager.show_subtitle_direct("Augh!", 1.0, "Resistance Fighter")
+		"search_01":
+			SubtitleManager.show_subtitle_direct("Hey — over here! Something's out there.", 2.0, "Resistance Fighter")
 		_:
 			pass
 	super._play_voice(line_key)

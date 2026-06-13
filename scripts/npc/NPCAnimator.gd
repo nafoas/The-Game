@@ -5,16 +5,20 @@ extends Node
 ## The GodotVMF MDL importer brings models in at their bind pose (A-pose) with
 ## no sequence playback, so NPCs looked like mannequins. This node drives the
 ## Skeleton3D bones directly each frame:
-##  - IDLE:   relaxed stance (arms at sides, bent elbows) + breathing sway
-##  - WALK:   leg/arm swing cycle driven by actual horizontal velocity
-##  - COMBAT: two-handed ready/aim pose, slight forward lean
-##  - DEAD:   limp slump (body fall itself is handled by the owner)
+##  - IDLE:       relaxed stance (arms at sides, bent elbows) + breathing sway
+##  - WALK:       leg/arm swing cycle driven by actual horizontal velocity
+##  - COMBAT:     two-handed low-ready pose, slight forward lean
+##  - COMBAT_AIM: gun raised — both upper arms lifted forward, forearms angled
+##                toward the enemy (set_aim_pitch tracks them vertically)
+##  - CROUCH:     deep duck (hiding behind cover)
+##  - LEAN:       leaning a shoulder against a wall (actbusy-style idle)
+##  - DEAD:       limp slump (body fall itself is handled by the owner)
 ##
 ## All rotations are computed in skeleton (model) space using the bind-pose
 ## global transforms, then converted into each bone's local pose. Model space
 ## (verified via probe on barney.mdl): +Y up, +Z forward, +X = model's left.
 
-enum Pose { IDLE, WALK, COMBAT, DEAD }
+enum Pose { IDLE, WALK, COMBAT, COMBAT_AIM, CROUCH, LEAN, DEAD }
 
 const WALK_CYCLE_SPEED: float = 3.6   # phase radians per metre travelled (approx)
 const BLEND_SPEED: float = 6.0        # pose-space blend rate (1/s)
@@ -42,9 +46,14 @@ var _time: float = 0.0
 var _idle_seed: float = 0.0           # desync idle breathing between NPCs
 var _flinch_timer: float = 0.0        # >0 while staggering from a hit
 var _flinch_side: float = 1.0         # randomized recoil side
+var _aim_pitch: float = 0.0           # radians; >0 = aim up (COMBAT_AIM arms)
+var _lean_side: float = 1.0           # which shoulder touches the wall in LEAN
 
 # Cached per-bone data
 var _bones: Dictionary = {}           # short name -> bone idx
+var _body_node: Node3D = null                 # model root (drop/roll target)
+var _body_base_pos: Vector3 = Vector3.ZERO    # model root rest position
+var _body_base_basis: Basis = Basis.IDENTITY  # model root rest basis
 var _rest_quat: Dictionary = {}       # bone idx -> rest rotation (Quaternion)
 var _parent_global_inv: Dictionary = {}  # bone idx -> parent global rest basis inverse
 var _parent_global: Dictionary = {}      # bone idx -> parent global rest basis
@@ -90,6 +99,9 @@ static func attach(model_node: Node3D) -> NPCAnimator:
 	if not anim._setup(skels[0] as Skeleton3D):
 		anim.free()
 		return null
+	anim._body_node = model_node
+	anim._body_base_pos = model_node.position
+	anim._body_base_basis = model_node.basis
 	model_node.add_child(anim)
 	return anim
 
@@ -137,11 +149,32 @@ func set_speed(speed: float) -> void:
 	_speed = speed
 
 
+## Vertical aim angle for COMBAT_AIM (radians; positive aims up). The owner
+## feeds the pitch toward its enemy so the raised arms actually track them.
+func set_aim_pitch(pitch: float) -> void:
+	_aim_pitch = clampf(pitch, deg_to_rad(-45.0), deg_to_rad(45.0))
+
+
+## Pick which shoulder rests on the wall for the LEAN pose. Probe-verified:
+## +1 tips the body toward the CHARACTER'S RIGHT shoulder.
+func set_lean_side(side: float) -> void:
+	_lean_side = signf(side) if absf(side) > 0.01 else 1.0
+
+
 ## Brief damage stagger: torso/head recoil that decays over FLINCH_TIME.
 ## Applied additively after the channel blender so it reads instantly.
 func flinch() -> void:
 	_flinch_timer = FLINCH_TIME
 	_flinch_side = 1.0 if randf() < 0.5 else -1.0
+
+
+## Skeleton access for weapon attachments (right-hand bone etc.).
+func get_skeleton() -> Skeleton3D:
+	return _skeleton
+
+
+func get_bone_idx(key: String) -> int:
+	return _bones.get(key, -1)
 
 
 func _process(delta: float) -> void:
@@ -185,6 +218,7 @@ func _compute_target_pose() -> void:
 	var foot_l := 0.0
 	var foot_r := 0.0
 	var pelvis_drop := 0.0
+	var pelvis_roll := 0.0
 
 	match _pose:
 		Pose.WALK:
@@ -238,6 +272,79 @@ func _compute_target_pose() -> void:
 				foot_l = deg_to_rad(-6.0)
 				foot_r = deg_to_rad(-6.0)
 				pelvis_drop = -0.05
+		Pose.COMBAT_AIM:
+			# Gun raised and ON TARGET: both upper arms lifted well forward,
+			# forearms angled in toward the enemy, hands meeting around the
+			# weapon. _aim_pitch rides on the arm-forward channels so the
+			# muzzle visibly tracks the target up/down.
+			arm_down = deg_to_rad(6.0)
+			arm_fwd_l = deg_to_rad(64.0) + _aim_pitch
+			arm_fwd_r = deg_to_rad(74.0) + _aim_pitch
+			arm_in = deg_to_rad(46.0)
+			elbow = deg_to_rad(30.0)
+			hand_curl = deg_to_rad(26.0)
+			spine_lean = deg_to_rad(9.0)
+			spine_sway = deg_to_rad(breathe * 0.6)
+			head_pitch = -_aim_pitch * 0.4
+			head_yaw = 0.0
+			if moving:
+				thigh_l = swing * deg_to_rad(32.0)
+				thigh_r = -swing * deg_to_rad(32.0)
+				calf_l = deg_to_rad(10.0) + maxf(0.0, -sin(_phase + 0.7)) * deg_to_rad(40.0) * walk_blend
+				calf_r = deg_to_rad(10.0) + maxf(0.0, sin(_phase + 0.7)) * deg_to_rad(40.0) * walk_blend
+				foot_l = -thigh_l * 0.4
+				foot_r = -thigh_r * 0.4
+			else:
+				# HL2 firing stance: knees bent in a half-crouch
+				thigh_l = deg_to_rad(-18.0)
+				thigh_r = deg_to_rad(-12.0)
+				calf_l = deg_to_rad(26.0)
+				calf_r = deg_to_rad(20.0)
+				foot_l = deg_to_rad(-8.0)
+				foot_r = deg_to_rad(-8.0)
+				pelvis_drop = -0.07
+		Pose.CROUCH:
+			# Ducked low behind cover: deep knee bend, hunched spine, weapon
+			# pulled in tight against the chest.
+			arm_down = deg_to_rad(14.0)
+			arm_fwd_l = deg_to_rad(40.0)
+			arm_fwd_r = deg_to_rad(46.0)
+			arm_in = deg_to_rad(40.0)
+			elbow = deg_to_rad(70.0)
+			hand_curl = deg_to_rad(30.0)
+			spine_lean = deg_to_rad(24.0)
+			spine_sway = deg_to_rad(breathe * 0.6)
+			head_pitch = deg_to_rad(-10.0)  # eyes up over the cover lip
+			head_yaw = 0.0
+			# Body sinks (skeleton drop) while the thighs come up forward and
+			# the knees fold back, keeping the feet roughly underneath.
+			thigh_l = deg_to_rad(64.0)
+			thigh_r = deg_to_rad(56.0)
+			calf_l = deg_to_rad(98.0)
+			calf_r = deg_to_rad(88.0)
+			foot_l = deg_to_rad(-34.0)
+			foot_r = deg_to_rad(-30.0)
+			pelvis_drop = -0.5
+		Pose.LEAN:
+			# actbusy ACT_BUSY_LEAN: shoulder against the wall, ankles crossed,
+			# arms hanging relaxed. _lean_side picks the wall shoulder.
+			var s := _lean_side
+			arm_down = deg_to_rad(32.0)
+			arm_fwd_l = deg_to_rad(4.0)
+			arm_fwd_r = deg_to_rad(4.0)
+			elbow = deg_to_rad(18.0)
+			hand_curl = deg_to_rad(24.0)
+			spine_lean = deg_to_rad(3.0 + breathe * 0.8)
+			spine_sway = deg_to_rad(-6.0 * s)
+			head_yaw = deg_to_rad(sin(t * 0.35) * 8.0 - 6.0 * s)
+			head_pitch = deg_to_rad(sin(t * 0.5) * 2.5)
+			pelvis_roll = deg_to_rad(12.0) * s
+			pelvis_drop = -0.02
+			# Wall-side leg straight and loaded; free leg crossed over slack
+			thigh_l = deg_to_rad(-4.0 if s > 0.0 else 7.0)
+			thigh_r = deg_to_rad(7.0 if s > 0.0 else -4.0)
+			calf_l = deg_to_rad(3.0 if s > 0.0 else 16.0)
+			calf_r = deg_to_rad(16.0 if s > 0.0 else 3.0)
 		Pose.DEAD:
 			# Limp: everything droops; the owner tweens the body over.
 			arm_down = deg_to_rad(40.0)
@@ -265,7 +372,7 @@ func _compute_target_pose() -> void:
 		"thigh_l": thigh_l, "thigh_r": thigh_r,
 		"calf_l": calf_l, "calf_r": calf_r,
 		"foot_l": foot_l, "foot_r": foot_r,
-		"pelvis_drop": pelvis_drop,
+		"pelvis_drop": pelvis_drop, "pelvis_roll": pelvis_roll,
 	}
 
 
@@ -292,17 +399,21 @@ func _apply_pose() -> void:
 	if _flinch_timer > 0.0:
 		flinch_amt = _flinch_timer / FLINCH_TIME
 
-	# Pelvis: vertical drop (crouch/walk bob) applied to position
-	if _bones.has("pelvis"):
-		var idx: int = _bones["pelvis"]
-		var rest := _skeleton.get_bone_rest(idx)
-		_skeleton.set_bone_pose_position(idx, rest.origin + Vector3(0, c["pelvis_drop"], 0))
+	# Whole-body drop (crouch / walk bob) and roll (wall lean) are applied to
+	# the model root node: bone-position offsets don't survive the Source axis
+	# conventions, but the node transform always works. Pivot = feet (origin).
+	if _body_node != null and is_instance_valid(_body_node):
+		_body_node.position = _body_base_pos + Vector3(0, c["pelvis_drop"], 0)
+		if absf(c["pelvis_roll"]) > 0.0005:
+			_body_node.basis = Basis(Vector3(0, 0, 1), c["pelvis_roll"]) * _body_base_basis
+		else:
+			_body_node.basis = _body_base_basis
 
 	# Spine: lean forward (about +X by +angle moves chest toward +Z) and sway
 	var lean := Quaternion(Vector3(1, 0, 0),
-		c["spine_lean"] * 0.5 - flinch_amt * deg_to_rad(14.0) * 0.5)
+		c["spine_lean"] * 0.5 - flinch_amt * deg_to_rad(20.0) * 0.5)
 	var sway := Quaternion(Vector3(0, 0, 1),
-		c["spine_sway"] * 0.5 + flinch_amt * _flinch_side * deg_to_rad(8.0) * 0.5)
+		c["spine_sway"] * 0.5 + flinch_amt * _flinch_side * deg_to_rad(11.0) * 0.5)
 	for sb in ["spine1", "spine2"]:
 		if _bones.has(sb):
 			_set_bone(_bones[sb], sway * lean)

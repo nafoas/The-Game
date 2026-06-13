@@ -537,6 +537,9 @@ func _fire_shot(def: Dictionary) -> void:
 	if not snd.is_empty():
 		_play_local_sound(snd)
 
+	# NPCs hear the gunshot even without line of sight (HL2 sound alerting).
+	get_tree().call_group("npc", "hear_sound", global_position, 12.0)
+
 	# Muzzle flash — tiny and brief
 	_muzzle_timer = 0.04
 	_muzzle_light.visible = true
