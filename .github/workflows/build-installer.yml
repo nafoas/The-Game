@@ -1,0 +1,56 @@
+name: Build Windows Installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'installer/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build installer exe
+        working-directory: installer
+        run: pyinstaller build_installer.spec
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HuntDownJoeBiden_Installer
+          path: installer/dist/HuntDownJoeBiden_Installer.exe
+
+      - name: Create or update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: installer-latest
+          name: "Game Installer (latest)"
+          body: |
+            ## Hunt Down Joe Biden — Installer
+
+            Download `HuntDownJoeBiden_Installer.exe` and run it.
+
+            The installer will:
+            1. Check for Git and Git LFS (with links to install them if missing)
+            2. Clone the game repository (~3 GB, includes all assets)
+            3. Download Godot 4.4 automatically
+            4. Create a desktop shortcut and launcher
+            5. Optionally launch the game immediately
+
+            **Requirements:** Git and Git LFS must be installed before running.
+          files: installer/dist/HuntDownJoeBiden_Installer.exe
+          make_latest: true
