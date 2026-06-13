@@ -1327,9 +1327,54 @@ func _build_end_area() -> void:
 	_prop(root, "stool", Vector3(-2.6, 0.12, bz + 3.2), -140.0)
 	_prop(root, "shelf", Vector3(5.1, 1.22, bz + 1.0), -90.0)
 	_prop(root, "gnome", Vector3(4.0, 0.12, bz - 3.6), 230.0)
+	# Back wall (faces the entrance): lockers, wall shelf, pinned charts, duct
+	_prop(root, "lockers", Vector3(-1.2, 1.02, bz + 4.55), 0.0)
+	_prop(root, "wall_shelf", Vector3(0.8, 1.5, bz + 4.72), 180.0)
+	_prop(root, "frame", Vector3(2.2, 2.0, bz + 4.78), 180.0)
+	_prop(root, "duct", Vector3(-4.6, 3.4, bz + 4.7), 180.0)
+	for ci3 in range(3):
+		var chart3 := _deco(root, Vector3(-2.9 + ci3 * 0.8, 2.0 + (ci3 % 2) * 0.5, bz + 4.78),
+			Vector3(0.6, 0.5, 0.02), _get_paper_mat())
+		chart3.rotation_degrees.z = randf_range(-5.0, 5.0)
+	_omni(root, Vector3(0.0, 2.6, bz + 3.5), Color(1.0, 0.85, 0.6), 0.7, 6.0)
 	_paper_scatter(root, Vector3(0.0, 0.12, bz + 1.0), 7, 2.0)
 	_prop(root, "refrigerator", Vector3(-4.9, 0.12, bz + 0.2), 90.0)
 	_prop(root, "wall_shelf", Vector3(-5.25, 1.5, bz + 2.4), 90.0)
+	# Planning table in the middle of the room — Biden's abandoned escape plan
+	var tbl := _csg(root, Vector3(0.6, 0.5, bz - 0.6), Vector3(2.0, 0.08, 1.0),
+		SourceMaterials.mat("wood_board"), "PlanTable")
+	tbl.rotation_degrees.y = 14.0
+	var tmetal := SourceMaterials.mat("metal")
+	for leg_off in [Vector3(-0.85, 0.25, -0.4), Vector3(0.85, 0.25, -0.4),
+			Vector3(-0.85, 0.25, 0.4), Vector3(0.85, 0.25, 0.4)]:
+		_deco(root, Vector3(0.6, 0, bz - 0.6) + leg_off, Vector3(0.07, 0.5, 0.07), tmetal)
+	for pi in range(4):
+		var page := _deco(root, Vector3(0.6 + randf_range(-0.7, 0.7), 0.56,
+			bz - 0.6 + randf_range(-0.3, 0.3)), Vector3(0.26, 0.012, 0.34), _get_paper_mat())
+		page.rotation_degrees.y = randf_range(0, 360)
+	_prop(root, "monitor_sm", Vector3(1.1, 0.69, bz - 0.7), -160.0)
+	_prop(root, "stool", Vector3(-0.3, 0.12, bz - 1.4), 75.0)
+	var tipped_stool := _prop(root, "stool", Vector3(1.8, 0.35, bz + 0.4), 0.0)
+	if tipped_stool != null:
+		tipped_stool.rotation_degrees.z = 96.0
+	# Charts pinned over the side walls
+	for ci2 in range(2):
+		var chart2 := _deco(root, Vector3(-5.28, 1.9 + ci2 * 0.7, bz - 2.0 + ci2 * 1.2),
+			Vector3(0.02, 0.5, 0.65), _get_paper_mat())
+		chart2.rotation_degrees.x = randf_range(-5.0, 5.0)
+	_paper_scatter(root, Vector3(1.0, 0.12, bz - 2.6), 5, 1.2)
+	_prop(root, "butane", Vector3(2.6, 0.13, bz - 4.2), 0.0)
+	_prop(root, "hospital_cart", Vector3(-3.2, 0.55, bz - 3.8), 50.0)
+	# Inside of the front wall: locker bank, leaning planks, barricade junk
+	_prop(root, "lockers", Vector3(2.9, 1.02, bz - 4.45), 0.0)
+	for bi in range(3):
+		var plank := _deco(root, Vector3(-3.4 + bi * 0.35, 1.3, bz - 4.62),
+			Vector3(0.25, 2.6, 0.07), board)
+		plank.rotation_degrees.x = randf_range(-10.0, -4.0)
+		plank.rotation_degrees.y = randf_range(-8.0, 8.0)
+	_prop(root, "footlocker", Vector3(0.9, 0.43, bz - 4.4), 95.0)
+	_paper_scatter(root, Vector3(0.0, 0.12, bz - 3.6), 6, 1.4)
+	_rubble_pile(root, Vector3(-2.2, 0.12, bz - 4.0))
 	_omni(root, Vector3(0.0, 3.4, bz + 1.0), Color(1.0, 0.86, 0.6), 0.9, 7.0)
 	_prop(root, "bell_light", Vector3(0.0, 3.85, bz + 1.0), 0.0, 1.0)
 
