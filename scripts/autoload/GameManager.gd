@@ -11,9 +11,14 @@ signal level_completed
 
 const MAX_HEALTH: float = 100.0
 const MAX_ARMOR: float = 100.0
-const PAUSE_MENU_SCENE: String = "res://scenes/ui/pause_menu.tscn"
-const END_OF_DEMO_SCENE: String = "res://scenes/ui/end_of_demo.tscn"
+const PAUSE_MENU_SCENE: String     = "res://scenes/ui/pause_menu.tscn"
+const END_OF_DEMO_SCENE: String    = "res://scenes/ui/end_of_demo.tscn"
 const OPENING_CUTSCENE_SCENE: String = "res://scenes/cutscene/opening_cutscene.tscn"
+const LOADING_SCREEN_SCENE: String = "res://scenes/ui/loading_screen.tscn"
+
+# Set this before changing to LOADING_SCREEN_SCENE so LoadingScreen knows
+# which scene to load in the background.
+var pending_scene: String = ""
 
 var player_health: float = 100.0
 var player_armor: float = 0.0
@@ -108,7 +113,8 @@ func complete_level() -> void:
 	level_completed.emit()
 	get_tree().paused = false
 	if ResourceLoader.exists(END_OF_DEMO_SCENE):
-		get_tree().change_scene_to_file(END_OF_DEMO_SCENE)
+		pending_scene = END_OF_DEMO_SCENE
+		get_tree().change_scene_to_file(LOADING_SCREEN_SCENE)
 
 
 func new_game() -> void:
@@ -121,7 +127,8 @@ func new_game() -> void:
 	armor_changed.emit(player_armor)
 	get_tree().paused = false
 	if ResourceLoader.exists(OPENING_CUTSCENE_SCENE):
-		get_tree().change_scene_to_file(OPENING_CUTSCENE_SCENE)
+		pending_scene = OPENING_CUTSCENE_SCENE
+		get_tree().change_scene_to_file(LOADING_SCREEN_SCENE)
 
 
 # ---------------------------------------------------------------------------
