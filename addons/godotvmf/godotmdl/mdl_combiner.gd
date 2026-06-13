@@ -322,6 +322,14 @@ const TEXTURE_PATH_ALIASES := {
 	"models/props_debris/rebar_concrete001": "models/props_debris/concretefloor030a",
 	"models/props_debris/plasterwall021a": "models/props_debris/concretefloor013a",
 	"models/props_citizen_tech/itemcrate_sheet": "models/items/ammocrate_items",
+	# Wrecked-car clusters use the car001b_03 paint sheet; only _01 ships.
+	# Same car family/UV layout, different paint — reads correctly.
+	"models/props_vehicles/car001b_03": "models/props_vehicles/car001b_01",
+	# walldestroyed09a's courtyard sheet is missing; concretefloor013a is the
+	# uniform broken-concrete stand-in already used for its plaster sheet.
+	"models/props_debris/courtyard_template001c": "models/props_debris/concretefloor013a",
+	# truss02* girders -> the shipped radiostation truss sheet (same family).
+	"models/props_c17/metaltruss012b": "models/props_radiostation/metal_truss",
 }
 
 ## Flat-color stand-ins for small detail textures (mouth interiors, hair cards,

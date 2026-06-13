@@ -68,10 +68,36 @@ const MDL := {
 	"antenna": "res://models/props_radiostation/radio_antenna01.mdl",
 	"corpse": "res://models/barney.mdl",
 	"wall_ruin": "res://models/props_debris/walldestroyed02a.mdl",
+	# --- world-building pass: verified-safe additions (VMT+VTF or alias) ---
+	"car_cluster2": "res://models/props_vehicles/car001b_cluster02.mdl",
+	"car_cluster3": "res://models/props_vehicles/car001b_cluster03.mdl",
+	"refrigerator": "res://models/props_forest/refrigerator01.mdl",
+	"sawhorse": "res://models/props_forest/sawhorse.mdl",
+	"ladder_wood": "res://models/props_forest/ladderwood.mdl",
+	"elecbox": "res://models/props_silo/electricalbox01.mdl",
+	"fuel_cask": "res://models/props_silo/fuel_cask.mdl",
+	"duct": "res://models/props_silo/duct.mdl",
+	"barrel_warn": "res://models/props_silo/barrelwarning.mdl",
+	"acunit2": "res://models/props_silo/acunit02.mdl",
+	"mining_barrier": "res://models/props_mining/barrier_cluster.mdl",
+	"wall_ruin9": "res://models/props_debris/walldestroyed09a.mdl",
+	"chunk_a": "res://models/props_debris/concrete_spawnchunk001a.mdl",
+	"chunk_b": "res://models/props_debris/concrete_spawnchunk001b.mdl",
+	"chunk_c": "res://models/props_debris/concrete_spawnchunk001c.mdl",
+	"rebar_big": "res://models/props_debris/rebar003a_32.mdl",
+	"fence_ext": "res://models/props_wasteland/exterior_fence_notbarbed002c.mdl",
+	"detail_grass": "res://models/props_foliage/detail_cluster01.mdl",
+	"hospital_cart": "res://models/props_c17/hospital_cart01.mdl",
+	"gate_door": "res://models/props_c17/gate_door03.mdl",
+	"truss": "res://models/props_c17/truss02a.mdl",
+	"wall_shelf": "res://models/props_c17/furnitureshelf002a.mdl",
+	"powerbox_dmg": "res://models/props_c17/powerbox_damaged.mdl",
+	"ladder_dmg": "res://models/props_c17/metalladder002c_damaged.mdl",
 }
 
 var _level_complete_triggered: bool = false
 var _lit_window_count: int = 0
+var _spawned_npcs: Array = []
 
 
 func _ready() -> void:
@@ -85,10 +111,30 @@ func _ready() -> void:
 	_build_plaza()
 	_build_interior()
 	_build_end_area()
+	_build_map_edges()
 	_build_skyline()
 	_spawn_npcs()
 	_spawn_pickups()
 	_add_ambient_zones()
+
+	# Land every NPC exactly on whatever surface is below it (road, sidewalk,
+	# upstairs slab) once physics is live — fixes spawn-in-ground/floating NPCs.
+	get_tree().physics_frame.connect(_snap_npcs_to_ground, CONNECT_ONE_SHOT)
+
+
+func _snap_npcs_to_ground() -> void:
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return
+	for npc in _spawned_npcs:
+		if not is_instance_valid(npc):
+			continue
+		var from: Vector3 = npc.global_position + Vector3(0.0, 1.5, 0.0)
+		var params := PhysicsRayQueryParameters3D.create(from, from + Vector3(0.0, -10.0, 0.0), 1)
+		params.exclude = [npc.get_rid()]
+		var hit := space.intersect_ray(params)
+		if hit.size() > 0:
+			npc.global_position.y = hit["position"].y + 0.05
 
 
 # ---------------------------------------------------------------------------
@@ -272,12 +318,21 @@ func _building(parent: Node, pos: Vector3, size: Vector3, facade_key: String,
 	_deco(parent, Vector3(pos.x, bot_y + 0.35, pos.z),
 		Vector3(size.x + 0.12, 0.7, size.z + 0.12), base)
 
-	# Rooftop clutter for taller buildings
-	if size.y >= 7.0 and randf() < 0.9:
-		if randf() < 0.5:
+	# Rooftop clutter for taller buildings: parapet ring + utility props
+	if size.y >= 7.0:
+		_parapet(parent, pos, size)
+		var roll := randf()
+		if roll < 0.4:
 			_prop(parent, "acunit", Vector3(pos.x, top_y + 1.62, pos.z + size.z * 0.15), randf_range(0, 360))
-		else:
+		elif roll < 0.7:
 			_prop(parent, "chimney", Vector3(pos.x, top_y, pos.z - size.z * 0.2), randf_range(0, 360))
+		else:
+			# Rooftop water tank (HL2 skyline staple)
+			_prop(parent, "fuel_cask", Vector3(pos.x, top_y, pos.z), randf_range(0, 360), 0.7)
+		# Small AC unit on the parapet edge + duct piping
+		if randf() < 0.7:
+			_prop(parent, "acunit2", Vector3(pos.x + size.x * 0.25, top_y + 0.58, pos.z - size.z * 0.25),
+				randf_range(0, 360))
 
 	for face in faces:
 		_window_grid(parent, pos, size, face)
@@ -398,6 +453,129 @@ func _crate_stack(parent: Node, pos: Vector3, count: int = 2) -> void:
 		if p == null:
 			_csg(parent, Vector3(pos.x, pos.y + 0.4 + i * 0.8, pos.z),
 				Vector3(0.8, 0.8, 0.8), SourceMaterials.mat("wood_board"))
+
+
+## Loose concrete chunks + rebar scattered on the ground (HL2 streets are
+## never clean). Chunk models sit flush at y~0; pos.y should be the floor top.
+func _rubble_pile(parent: Node, pos: Vector3, big: bool = false) -> void:
+	var keys := ["chunk_a", "chunk_b", "chunk_c"]
+	var n := 4 if big else 3
+	for i in range(n):
+		var key: String = keys[i % keys.size()]
+		var off := Vector3(randf_range(-0.7, 0.7), 0.12, randf_range(-0.7, 0.7))
+		_prop(parent, key, pos + off, randf_range(0, 360))
+	if big:
+		_prop(parent, "rubble_slab", pos + Vector3(0, 0.1, 0), randf_range(0, 360))
+		_prop(parent, "rebar", pos + Vector3(0.4, 0.41, -0.3), randf_range(0, 360))
+
+
+static var _paper_mat: StandardMaterial3D = null
+
+static func _get_paper_mat() -> StandardMaterial3D:
+	if _paper_mat == null:
+		_paper_mat = StandardMaterial3D.new()
+		_paper_mat.albedo_color = Color(0.72, 0.7, 0.63)
+		_paper_mat.roughness = 1.0
+		_paper_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return _paper_mat
+
+
+## Scattered papers/newspapers lying flat on the floor.
+func _paper_scatter(parent: Node, center: Vector3, count: int, radius: float = 1.2) -> void:
+	var pmat := _get_paper_mat()
+	for i in range(count):
+		var mi := MeshInstance3D.new()
+		var quad := PlaneMesh.new()
+		quad.size = Vector2(randf_range(0.2, 0.3), randf_range(0.26, 0.36))
+		mi.mesh = quad
+		mi.material_override = pmat
+		mi.position = center + Vector3(randf_range(-radius, radius), 0.012,
+			randf_range(-radius, radius))
+		mi.rotation_degrees = Vector3(0.0, randf_range(0, 360), 0.0)
+		parent.add_child(mi)
+
+
+## Rooftop parapet ledge ring (HL2 buildings never end in a knife edge).
+func _parapet(parent: Node, bpos: Vector3, bsize: Vector3) -> void:
+	var mat := SourceMaterials.mat("trim")
+	var top := bpos.y + bsize.y * 0.5
+	var hw := bsize.x * 0.5
+	var hd := bsize.z * 0.5
+	_deco(parent, Vector3(bpos.x, top + 0.25, bpos.z - hd), Vector3(bsize.x + 0.3, 0.5, 0.3), mat)
+	_deco(parent, Vector3(bpos.x, top + 0.25, bpos.z + hd), Vector3(bsize.x + 0.3, 0.5, 0.3), mat)
+	_deco(parent, Vector3(bpos.x - hw, top + 0.25, bpos.z), Vector3(0.3, 0.5, bsize.z + 0.3), mat)
+	_deco(parent, Vector3(bpos.x + hw, top + 0.25, bpos.z), Vector3(0.3, 0.5, bsize.z + 0.3), mat)
+
+
+## Sagging power/phone line between two points (thin dark cylinder).
+static var _wire_mat: StandardMaterial3D = null
+
+func _wire(parent: Node, a: Vector3, b: Vector3) -> void:
+	if _wire_mat == null:
+		_wire_mat = StandardMaterial3D.new()
+		_wire_mat.albedo_color = Color(0.06, 0.06, 0.07)
+		_wire_mat.roughness = 0.9
+	var mid := (a + b) * 0.5 + Vector3(0, -0.35, 0)  # slight sag at the middle
+	for seg in [[a, mid], [mid, b]]:
+		var p0: Vector3 = seg[0]
+		var p1: Vector3 = seg[1]
+		var mi := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = 0.015
+		cyl.bottom_radius = 0.015
+		cyl.height = p0.distance_to(p1)
+		cyl.radial_segments = 5
+		mi.mesh = cyl
+		mi.material_override = _wire_mat
+		mi.position = (p0 + p1) * 0.5
+		var dir := (p1 - p0).normalized()
+		var axis := Vector3.UP.cross(dir)
+		if axis.length() > 0.001:
+			mi.basis = Basis(axis.normalized(), Vector3.UP.angle_to(dir))
+		parent.add_child(mi)
+
+
+## Wall-mounted fire escape: two grated platforms + damaged ladder + railings.
+## wall_x is the building face plane; side is +1 if the platform extends +x.
+func _fire_escape(parent: Node, wall_x: float, z: float, side: float) -> void:
+	var metal := SourceMaterials.mat("metal_rusty")
+	for fl in range(2):
+		var py := 3.1 + fl * 3.0
+		_deco(parent, Vector3(wall_x + side * 0.7, py, z),
+			Vector3(1.4, 0.08, 3.0), metal)
+		# railing
+		_deco(parent, Vector3(wall_x + side * 1.35, py + 0.5, z), Vector3(0.06, 1.0, 3.0), metal)
+		_deco(parent, Vector3(wall_x + side * 0.7, py + 0.5, z - 1.5), Vector3(1.4, 1.0, 0.06), metal)
+		_deco(parent, Vector3(wall_x + side * 0.7, py + 0.5, z + 1.5), Vector3(1.4, 1.0, 0.06), metal)
+	# Ladder dropping from the lower platform (damaged C17 ladder, base origin)
+	_prop(parent, "ladder_dmg", Vector3(wall_x + side * 0.55, 0.05, z + 1.2), 0.0 if side > 0 else 180.0, 0.6)
+
+
+## Simple HL2-style wooden bench: concrete supports + slats.
+func _bench(parent: Node, pos: Vector3, rot_y: float = 0.0) -> void:
+	var bench := Node3D.new()
+	parent.add_child(bench)
+	bench.position = pos
+	bench.rotation_degrees.y = rot_y
+	var wood := SourceMaterials.mat("wood_board")
+	var conc := SourceMaterials.mat("concrete_old")
+	for sx in [-0.7, 0.7]:
+		_csg(bench, Vector3(sx, 0.21, 0.0), Vector3(0.12, 0.42, 0.5), conc)
+	for i in range(3):
+		_deco(bench, Vector3(0.0, 0.46, -0.18 + i * 0.18), Vector3(1.8, 0.05, 0.14), wood)
+	for i in range(2):
+		_deco(bench, Vector3(0.0, 0.75 + i * 0.2, 0.28), Vector3(1.8, 0.12, 0.05), wood)
+
+
+## Dead-plant concrete planter (plaza dressing).
+func _planter(parent: Node, pos: Vector3, dead: bool = true) -> void:
+	var conc := SourceMaterials.mat("concrete_old")
+	_csg(parent, pos + Vector3(0, 0.3, 0), Vector3(1.5, 0.6, 1.5), conc)
+	_deco(parent, pos + Vector3(0, 0.56, 0), Vector3(1.26, 0.1, 1.26), SourceMaterials.mat("dirt"))
+	if dead:
+		_prop(parent, "detail_grass", pos + Vector3(0.1, 0.6, 0.0), randf_range(0, 360))
+	else:
+		_prop(parent, "bush", pos + Vector3(0, 0.6, 0), randf_range(0, 360))
 
 
 func _corpse(parent: Node, pos: Vector3, rot_y: float = 0.0) -> void:
@@ -590,8 +768,9 @@ func _build_staging_area() -> void:
 	_prop(root, "receiver_b", Vector3(2.0, 0.63, 1.5), 200.0)
 	_prop(root, "stool", Vector3(0.6, 0.07, 0.4), 30.0)
 
-	# Military truck parked at the pad edge
-	_prop(root, "truck", Vector3(-7.0, 1.56, -10.5), 80.0)
+	# Military truck parked at the pad edge (model base is at its origin —
+	# it was floating 1.5m in the air before)
+	_prop(root, "truck", Vector3(-7.0, 0.02, -10.5), 80.0)
 
 	# Entry control point onto the street
 	_concrete_barrier(root, Vector3(-3.2, 0.06, 8.6), 14.0)
@@ -600,6 +779,13 @@ func _build_staging_area() -> void:
 
 	# Floodlight pole watching the exit
 	_street_lamp(root, Vector3(-8.8, 0.06, 7.4), 140.0, false)
+
+	# FOB clutter: spare drums, warning barrel, paperwork blown off the table
+	_prop(root, "barrel_warn", Vector3(8.2, 0.07, 0.5), 0.0)
+	_prop(root, "fuel_cask", Vector3(9.0, 0.07, -5.8), 0.0, 0.55)
+	_paper_scatter(root, Vector3(0.8, 0.07, 0.2), 5, 1.4)
+	_prop(root, "sawhorse", Vector3(-6.8, 0.07, 0.8), 25.0)
+	_rubble_pile(root, Vector3(8.6, 0.07, 5.4))
 
 
 # ---------------------------------------------------------------------------
@@ -611,17 +797,18 @@ func _build_street_a() -> void:
 	root.name = "StreetA"
 	add_child(root)
 
-	# Left side: two buildings then the alley gap (alley z 44..56), then corner block
-	_building(root, Vector3(-10.0, 4.0, 22.5), Vector3(6.0, 8.0, 15.0), "brick_inn", ["+x"], "BldL1")
-	_building(root, Vector3(-10.0, 4.0, 37.0), Vector3(6.0, 8.0, 14.0), "plaster_tan", ["+x"], "BldL2")
-	_building(root, Vector3(-10.0, 3.25, 58.0), Vector3(6.0, 6.5, 4.0), "plaster_gray", ["+x"], "BldL3")
+	# Left side: two buildings then the alley gap (alley z 44..56), then corner
+	# block. 12m+ tall so the street reads as a real C17 canyon (no sky gaps).
+	_building(root, Vector3(-10.0, 6.0, 22.5), Vector3(6.0, 12.0, 15.0), "brick_inn", ["+x"], "BldL1")
+	_building(root, Vector3(-10.0, 6.0, 37.0), Vector3(6.0, 12.0, 14.0), "plaster_tan", ["+x"], "BldL2")
+	_building(root, Vector3(-10.0, 6.0, 58.0), Vector3(6.0, 12.0, 4.0), "plaster_gray", ["+x"], "BldL3")
 	# Tall block forming the alley's west wall
-	_building(root, Vector3(-15.0, 4.5, 49.0), Vector3(4.0, 9.0, 20.0), "indust_wall", [], "BldLW")
+	_building(root, Vector3(-15.0, 7.0, 49.0), Vector3(4.0, 14.0, 20.0), "indust_wall", [], "BldLW")
 
 	# Right side
-	_building(root, Vector3(10.0, 4.0, 22.0), Vector3(6.0, 8.0, 12.0), "concrete_panels", ["-x"], "BldR1")
-	_building(root, Vector3(10.0, 4.0, 36.0), Vector3(6.0, 8.0, 14.0), "concrete_wall_b", ["-x"], "BldR2")
-	_building(root, Vector3(10.0, 4.0, 50.0), Vector3(6.0, 8.0, 10.0), "plaster_gray", ["-x"], "BldR3")
+	_building(root, Vector3(10.0, 6.0, 22.0), Vector3(6.0, 12.0, 12.0), "concrete_panels", ["-x"], "BldR1")
+	_building(root, Vector3(10.0, 6.0, 36.0), Vector3(6.0, 12.0, 14.0), "concrete_wall_b", ["-x"], "BldR2")
+	_building(root, Vector3(10.0, 6.0, 50.0), Vector3(6.0, 12.0, 10.0), "plaster_gray", ["-x"], "BldR3")
 
 	# Chain-link fences closing the right-side gaps between buildings
 	var fence_a := _prop(root, "fence_chain", Vector3(8.5, 1.63, 28.5), 0.0)
@@ -638,10 +825,11 @@ func _build_street_a() -> void:
 		var blk := _csg(root, Vector3(8.5, 1.5, bz), Vector3(0.2, 3.0, 2.2), blocker_mat)
 		blk.name = "FenceBlocker"
 
-	# Wrecked vehicles on the road
-	_prop(root, "hatchback", Vector3(-2.2, 0.66, 23.0), 205.0)
-	_prop(root, "van", Vector3(3.0, 0.94, 44.0), -28.0)
-	var burned := _prop(root, "hatchback", Vector3(-1.2, 0.66, 51.5), 160.0)
+	# Wrecked vehicles on the road (model bases measured — sit ON the asphalt)
+	_prop(root, "hatchback", Vector3(-2.2, 0.65, 23.0), 205.0)
+	_prop(root, "hatchback", Vector3(3.1, 0.65, 14.5), 24.0)
+	_prop(root, "van", Vector3(3.0, 0.93, 44.0), -28.0)
+	var burned := _prop(root, "hatchback", Vector3(-1.2, 0.65, 51.5), 160.0)
 	if burned != null:
 		burned.rotation_degrees.z = 6.0
 		_smoke_column(root, Vector3(-1.2, 1.15, 51.5))
@@ -650,21 +838,53 @@ func _build_street_a() -> void:
 	_prop(root, "dumpster", Vector3(-5.6, 0.13, 29.5), 4.0, 0.78)
 	_prop(root, "dumpster", Vector3(5.4, 0.13, 41.5), 182.0, 0.78)
 
-	# Street clutter
+	# Street clutter (heights from measured model AABBs — nothing floats)
 	_prop(root, "oildrum", Vector3(-4.6, 0.49, 18.5), 70.0)
 	_prop(root, "oildrum", Vector3(4.3, 0.49, 33.0), -25.0)
+	_prop(root, "oildrum", Vector3(5.0, 0.49, 24.5), 140.0)
 	_prop(root, "spool", Vector3(6.2, 0.45, 19.0), 12.0)
 	_prop(root, "propane", Vector3(-4.2, 0.57, 31.0), 0.0)
-	_prop(root, "bicycle", Vector3(-6.6, 0.68, 20.5), 100.0)
-	_prop(root, "rubble_slab", Vector3(5.8, 0.28, 47.5), 35.0)
-	_prop(root, "rebar", Vector3(5.6, 0.5, 47.4), 60.0)
-	_prop(root, "butane", Vector3(-5.2, 0.53, 39.5), 0.0)
-	_prop(root, "powerbox", Vector3(-6.85, 1.2, 26.0), 90.0)
-	_prop(root, "ladder", Vector3(6.8, 3.2, 51.0), -90.0, 0.8)
+	_prop(root, "bicycle", Vector3(-6.6, 0.66, 20.5), 100.0)
+	_prop(root, "rubble_slab", Vector3(5.8, 0.22, 47.5), 35.0)
+	_prop(root, "rebar", Vector3(5.6, 0.53, 47.4), 60.0)
+	_prop(root, "butane", Vector3(-5.2, 0.12, 39.5), 0.0)
+	_prop(root, "powerbox", Vector3(-6.85, 0.12, 26.0), 90.0)
+	# Abandoned fridge + warning barrel + sawhorse — C17 sidewalk junk
+	_prop(root, "refrigerator", Vector3(-6.3, 0.12, 33.8), 110.0)
+	_prop(root, "barrel_warn", Vector3(4.7, 0.12, 37.5), 0.0)
+	_prop(root, "sawhorse", Vector3(-4.8, 0.12, 25.8), 75.0)
+	_prop(root, "hospital_cart", Vector3(5.9, 0.55, 27.5), -35.0)
+	# Substation box bank against the right building face
+	_prop(root, "elecbox", Vector3(6.92, 0.12, 36.0), 180.0, 0.9)
+	_prop(root, "powerbox_dmg", Vector3(6.85, 0.12, 31.5), -90.0)
+	_prop(root, "duct", Vector3(-6.9, 3.2, 35.0), 90.0)
+
+	# Rubble piles every few meters along the curbs — streets are never clean
+	_rubble_pile(root, Vector3(-5.3, 0.12, 15.5))
+	_rubble_pile(root, Vector3(4.9, 0.12, 21.0))
+	_rubble_pile(root, Vector3(-4.7, 0.12, 27.8), true)
+	_rubble_pile(root, Vector3(5.6, 0.12, 34.5))
+	_rubble_pile(root, Vector3(-5.8, 0.12, 44.5))
+	_rubble_pile(root, Vector3(4.6, 0.12, 49.8), true)
+	_paper_scatter(root, Vector3(-4.5, 0.12, 22.0), 5)
+	_paper_scatter(root, Vector3(4.8, 0.12, 39.0), 6)
+	_paper_scatter(root, Vector3(0.5, 0.06, 30.0), 4)
+
+	# Fire escapes on the facing walls (classic C17 streetscape)
+	_fire_escape(root, -6.95, 24.0, 1.0)
+	_fire_escape(root, 6.95, 39.5, -1.0)
+	# Wall ladder snugged against the corner block (centered origin, 13m tall)
+	_prop(root, "ladder", Vector3(6.8, 5.2, 51.0), -90.0, 0.8)
+
+	# Power lines sagging across the street between rooflines
+	_wire(root, Vector3(-7.0, 11.6, 21.0), Vector3(7.0, 11.3, 23.5))
+	_wire(root, Vector3(-7.0, 11.4, 36.0), Vector3(7.0, 11.6, 34.0))
+	_wire(root, Vector3(-7.0, 11.5, 42.5), Vector3(7.0, 11.2, 47.0))
 
 	# Mid-street barricade funnel (cover for the firefight)
 	_concrete_barrier(root, Vector3(-2.0, 0.06, 33.5), 8.0)
 	_prop(root, "barricade_tri", Vector3(1.4, 0.57, 34.2), 40.0)
+	_prop(root, "barricade_x", Vector3(-0.4, 0.87, 16.8), -15.0)
 
 	# Street lamps — one flickers
 	_street_lamp(root, Vector3(-4.4, 0.12, 20.0), 90.0, false)
@@ -695,13 +915,30 @@ func _build_side_alley() -> void:
 	blocker_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_csg(root, Vector3(-12.4, 1.5, 50.0), Vector3(0.2, 3.0, 6.2), blocker_mat, "AlleyBlocker")
 
-	# Dumpster + junk
+	# Dumpster + junk — alleys in C17 are PACKED
 	_prop(root, "dumpster", Vector3(-11.0, 0.06, 45.6), 95.0, 0.75)
-	_prop(root, "oildrum", Vector3(-9.0, 0.43, 46.4), 130.0)
+	_prop(root, "oildrum", Vector3(-9.0, 0.42, 46.4), 130.0)
+	_prop(root, "oildrum", Vector3(-11.6, 0.42, 51.2), 60.0)
 	_crate_stack(root, Vector3(-12.0, 0.06, 53.5), 2)
-	_prop(root, "rubble_slab", Vector3(-9.5, 0.22, 52.0), 75.0)
-	_prop(root, "ibeam", Vector3(-10.8, 0.38, 55.2), 25.0)
+	_crate_stack(root, Vector3(-8.3, 0.06, 52.6), 2)
+	_prop(root, "rubble_slab", Vector3(-9.5, 0.15, 52.0), 75.0)
+	_prop(root, "ibeam", Vector3(-10.8, 0.25, 55.2), 25.0)
 	_prop(root, "bush", Vector3(-12.6, 0.05, 47.0), 0.0)
+	# Stacked pallets/boxes against the west wall + leaning ladder
+	_prop(root, "spool", Vector3(-12.2, 0.38, 48.8), 40.0)
+	_prop(root, "propane", Vector3(-8.6, 0.5, 49.6), 0.0)
+	_prop(root, "sawhorse", Vector3(-9.8, 0.05, 47.9), 105.0)
+	_prop(root, "barrel_warn", Vector3(-12.3, 0.05, 55.6), 0.0)
+	var lean_ladder := _prop(root, "ladder_wood", Vector3(-11.85, 1.85, 49.9), 90.0)
+	if lean_ladder != null:
+		lean_ladder.rotation_degrees.x = -12.0
+	_prop(root, "refrigerator", Vector3(-8.4, 0.05, 45.2), -100.0)
+	_rubble_pile(root, Vector3(-10.6, 0.05, 47.2))
+	_rubble_pile(root, Vector3(-9.2, 0.05, 54.0), true)
+	_paper_scatter(root, Vector3(-10.0, 0.05, 50.5), 7, 1.6)
+	# Broken chain-link section partway across the alley (squeeze-through gap
+	# on the west side)
+	_prop(root, "fence_ext", Vector3(-9.0, 1.95, 51.5), 90.0)
 
 	# Pipes running up the north building face (z=44 wall of BldL2)
 	var pipe_mat := SourceMaterials.mat("metal_rusty")
@@ -787,14 +1024,14 @@ func _build_plaza() -> void:
 	# The lost gnome watches over the plaza
 	_prop(root, "gnome", Vector3(0.12, 2.0, 70.0), 200.0)
 
-	# Perimeter buildings with facades
-	_building(root, Vector3(-12.0, 4.5, 63.0), Vector3(5.0, 9.0, 6.0), "concrete_wall", ["+x"], "PlazaBldA")
-	_building(root, Vector3(12.0, 4.5, 63.0), Vector3(5.0, 9.0, 6.0), "plaster_tan", ["-x"], "PlazaBldB")
-	_building(root, Vector3(-12.0, 4.5, 77.0), Vector3(5.0, 9.0, 6.0), "plaster_worn", ["+x"], "PlazaBldC")
-	_building(root, Vector3(12.0, 4.5, 77.0), Vector3(5.0, 9.0, 6.0), "brick_inn", ["-x"], "PlazaBldD")
+	# Perimeter buildings with facades (12m+ street-canyon heights)
+	_building(root, Vector3(-12.0, 6.5, 63.0), Vector3(5.0, 13.0, 6.0), "concrete_wall", ["+x"], "PlazaBldA")
+	_building(root, Vector3(12.0, 6.5, 63.0), Vector3(5.0, 13.0, 6.0), "plaster_tan", ["-x"], "PlazaBldB")
+	_building(root, Vector3(-12.0, 6.5, 77.0), Vector3(5.0, 13.0, 6.0), "plaster_worn", ["+x"], "PlazaBldC")
+	_building(root, Vector3(12.0, 6.5, 77.0), Vector3(5.0, 13.0, 6.0), "brick_inn", ["-x"], "PlazaBldD")
 	# North wings flanking the radio building entrance
-	_building(root, Vector3(-7.5, 3.5, 82.5), Vector3(5.0, 7.0, 3.0), "plaster_gray", ["-z"], "PlazaWingL")
-	_building(root, Vector3(7.5, 3.5, 82.5), Vector3(5.0, 7.0, 3.0), "plaster_gray", ["-z"], "PlazaWingR")
+	_building(root, Vector3(-7.5, 5.0, 82.5), Vector3(5.0, 10.0, 3.0), "plaster_gray", ["-z"], "PlazaWingL")
+	_building(root, Vector3(7.5, 5.0, 82.5), Vector3(5.0, 10.0, 3.0), "plaster_gray", ["-z"], "PlazaWingR")
 
 	# Side gaps fenced off
 	for fz in [70.0]:
@@ -823,10 +1060,43 @@ func _build_plaza() -> void:
 		_concrete_barrier(root, bp[0], bp[1])
 
 	# Clutter
-	_prop(root, "oildrum", Vector3(-8.8, 0.51, 64.0), 30.0)
+	_prop(root, "oildrum", Vector3(-8.8, 0.45, 64.0), 30.0)
 	_prop(root, "spool", Vector3(8.6, 0.41, 76.4), -15.0)
 	_prop(root, "barricade_x", Vector3(-3.0, 0.89, 60.5), 75.0)
-	_prop(root, "rubble_slab", Vector3(3.4, 0.3, 78.6), 10.0)
+	_prop(root, "rubble_slab", Vector3(3.4, 0.18, 78.6), 10.0)
+
+	# Benches ringing the fountain + dead planters (a plaza that used to live)
+	_bench(root, Vector3(-3.6, 0.08, 70.0), 90.0)
+	_bench(root, Vector3(3.6, 0.08, 70.0), -90.0)
+	_bench(root, Vector3(0.0, 0.08, 66.4), 180.0)
+	_planter(root, Vector3(-8.5, 0.08, 74.5), true)
+	_planter(root, Vector3(8.5, 0.08, 67.0), true)
+	_planter(root, Vector3(-8.5, 0.08, 61.5), false)
+	_paper_scatter(root, Vector3(-1.5, 0.08, 67.5), 8, 2.2)
+	_paper_scatter(root, Vector3(4.0, 0.08, 73.5), 6, 1.8)
+	_rubble_pile(root, Vector3(-9.0, 0.08, 78.0), true)
+	_rubble_pile(root, Vector3(9.2, 0.08, 62.0))
+
+	# Notice board on the west building wall (resistance flyers)
+	var board_frame := SourceMaterials.mat("wood_board")
+	_deco(root, Vector3(-9.42, 1.8, 63.0), Vector3(0.1, 1.2, 2.0), board_frame)
+	for i in range(6):
+		var flyer := _deco(root, Vector3(-9.34, 1.8 + randf_range(-0.4, 0.4),
+			63.0 + randf_range(-0.8, 0.8)), Vector3(0.02, 0.3, 0.22), _get_paper_mat())
+		flyer.rotation_degrees.x = randf_range(-6.0, 6.0)
+
+	# Extra combat cover: sandbag nests + overturned cart
+	_sandbag_row(root, Vector3(-2.4, 0.08, 62.2), 4, "x")
+	_sandbag_row(root, Vector3(1.0, 0.08, 77.6), 4, "x")
+	var cart := _prop(root, "handtruck", Vector3(6.2, 0.45, 72.6), 35.0)
+	if cart != null:
+		cart.rotation_degrees.z = 88.0
+	_prop(root, "barrel_warn", Vector3(-6.4, 0.08, 66.8), 0.0)
+	_prop(root, "sawhorse", Vector3(2.4, 0.08, 63.2), 120.0)
+
+	# Power lines crossing the plaza corners
+	_wire(root, Vector3(-9.5, 12.4, 63.0), Vector3(-5.2, 9.6, 81.0))
+	_wire(root, Vector3(9.5, 12.4, 77.0), Vector3(5.2, 9.6, 81.0))
 
 	# Plaza lamps
 	_street_lamp(root, Vector3(-8.0, 0.08, 63.0), 45.0, false)
@@ -855,8 +1125,8 @@ func _build_interior() -> void:
 	_csg(root, Vector3(3.5, 4.0, bz - 6.0), Vector3(3.4, 8.0, 0.4), wall)
 	_csg(root, Vector3(0.0, 7.0, bz - 6.0), Vector3(3.0, 2.0, 0.4), wall)
 
-	# Open door at the entrance
-	var door := _prop(root, "door", Vector3(-1.4, 0.06, bz - 6.0), -55.0)
+	# Open door at the entrance (door01 has a centered origin — y is half height)
+	var door := _prop(root, "door", Vector3(-1.4, 1.49, bz - 6.0), -55.0)
 	if door == null:
 		_csg(root, Vector3(-1.2, 1.35, bz - 6.1), Vector3(0.1, 2.7, 1.1), SourceMaterials.mat("wood_door"))
 
@@ -910,12 +1180,49 @@ func _build_interior() -> void:
 	_prop(root, "radiator", Vector3(-4.6, 0.58, bz + 0.5), 90.0)
 	_prop(root, "cooler", Vector3(4.3, 0.12, bz - 1.0), -90.0)
 	_prop(root, "frame", Vector3(-4.72, 2.2, bz - 1.8), 90.0)
-	_prop(root, "clock", Vector3(0.0, 3.2, bz + 5.78), 90.0)
-	_prop(root, "butane", Vector3(-3.6, 0.46, bz - 4.4), 0.0)
+	var wall_clock := _prop(root, "clock", Vector3(0.0, 3.2, bz + 5.75), 0.0)
+	if wall_clock != null:
+		wall_clock.rotation_degrees = Vector3(90.0, 0.0, 0.0)
+	_prop(root, "butane", Vector3(-3.6, 0.13, bz - 4.4), 0.0)
 
-	# Crates on the second floor
-	_crate_stack(root, Vector3(3.0, 4.38, bz + 3.0), 2)
-	_prop(root, "oildrum", Vector3(-1.5, 4.75, bz + 4.8), 65.0)
+	# Lived-in mess: sleeping bag, scattered papers, overturned crate,
+	# supply cart, food cans on the cooler, maps pinned to the wall.
+	var bag_mat := StandardMaterial3D.new()
+	bag_mat.albedo_color = Color(0.23, 0.27, 0.2)
+	bag_mat.roughness = 1.0
+	_deco(root, Vector3(-2.6, 0.17, bz + 4.4), Vector3(0.8, 0.1, 2.0), bag_mat)
+	_deco(root, Vector3(-2.6, 0.22, bz + 5.2), Vector3(0.6, 0.14, 0.4), bag_mat)  # pillow roll
+	_paper_scatter(root, Vector3(0.5, 0.12, bz - 1.5), 9, 1.8)
+	_paper_scatter(root, Vector3(2.2, 0.12, bz + 2.8), 5, 1.0)
+	var tipped := _prop(root, "beacon_crate", Vector3(-1.6, 0.5, bz - 2.6), 20.0)
+	if tipped != null:
+		tipped.rotation_degrees.z = 94.0
+	_prop(root, "hospital_cart", Vector3(0.8, 0.55, bz + 4.4), 165.0)
+	# Cans on the cooler top (cooler is 1.28 tall, base origin)
+	var can_mat := SourceMaterials.mat("metal")
+	for ci in range(3):
+		var can := CSGCylinder3D.new()
+		can.radius = 0.05
+		can.height = 0.12
+		can.sides = 8
+		can.use_collision = false
+		can.material = can_mat
+		can.position = Vector3(4.15 + ci * 0.22, 1.46, bz - 1.0 + (ci % 2) * 0.18)
+		root.add_child(can)
+	# Maps/charts pinned to the back wall over the radio desk
+	for mi_i in range(3):
+		var chart := _deco(root, Vector3(1.6 + mi_i * 0.9, 2.1 + (mi_i % 2) * 0.35, bz + 5.76),
+			Vector3(0.7, 0.55, 0.02), _get_paper_mat())
+		chart.rotation_degrees.z = randf_range(-4.0, 4.0)
+	# Wall shelf with supplies near the entrance
+	_prop(root, "wall_shelf", Vector3(-4.7, 1.5, bz - 4.6), 90.0)
+	_prop(root, "monitor_sm", Vector3(-4.6, 1.86, bz - 4.6), 110.0)
+
+	# Crates on the second floor (slab top at 4.32)
+	_crate_stack(root, Vector3(3.0, 4.32, bz + 3.0), 2)
+	_prop(root, "oildrum", Vector3(-1.5, 4.69, bz + 4.8), 65.0)
+	_prop(root, "footlocker", Vector3(-2.8, 4.63, bz + 4.4), 30.0)
+	_paper_scatter(root, Vector3(1.0, 4.32, bz + 3.5), 4, 1.2)
 
 	# Hanging industrial lights + dust
 	for lp in [Vector3(0.0, 3.9, bz - 2.0), Vector3(2.0, 3.9, bz + 3.5)]:
@@ -982,17 +1289,28 @@ func _build_end_area() -> void:
 				Vector3(0.08, 0.28, 1.3), board)
 			plank.rotation_degrees.x = randf_range(-9.0, 9.0)
 
-	# Door ajar
-	var door := _prop(root, "door", Vector3(-1.5, 0.06, bz - 5.0), -35.0)
+	# Door ajar (centered origin)
+	var door := _prop(root, "door", Vector3(-1.5, 1.49, bz - 5.0), -35.0)
 	if door == null:
 		_csg(root, Vector3(-1.3, 1.35, bz - 5.1), Vector3(0.1, 2.7, 1.1), SourceMaterials.mat("wood_door"))
 
-	# Defensive dressing outside
+	# Defensive dressing outside — last-stand position
 	_concrete_barrier(root, Vector3(-3.0, 0.05, bz - 7.5), 4.0)
 	_concrete_barrier(root, Vector3(3.0, 0.05, bz - 7.5), -7.0)
 	_sandbag_row(root, Vector3(-1.6, 0.05, bz - 8.6), 5, "x")
+	_sandbag_row(root, Vector3(-4.8, 0.05, bz - 9.4), 4, "x")
 	_prop(root, "barricade_tri", Vector3(-4.6, 0.56, bz - 6.4), 30.0)
-	_prop(root, "oildrum", Vector3(4.8, 0.48, bz - 6.2), 110.0)
+	_prop(root, "barricade_x", Vector3(4.6, 0.86, bz - 8.4), -60.0)
+	_prop(root, "oildrum", Vector3(4.8, 0.42, bz - 6.2), 110.0)
+	_prop(root, "barrel_warn", Vector3(-5.6, 0.05, bz - 7.8), 0.0)
+	# Ammo crates stacked against the front wall
+	_prop(root, "ammocrate_s", Vector3(3.6, 0.46, bz - 5.6), 4.0)
+	_prop(root, "ammocrate_p", Vector3(4.6, 0.46, bz - 5.4), -10.0)
+	_prop(root, "ammocrate_s", Vector3(4.1, 1.32, bz - 5.5), 8.0)
+	_crate_stack(root, Vector3(-5.4, 0.05, bz - 5.6), 2)
+	_rubble_pile(root, Vector3(-3.4, 0.05, bz - 10.6), true)
+	_rubble_pile(root, Vector3(5.4, 0.05, bz - 10.0))
+	_paper_scatter(root, Vector3(0.0, 0.05, bz - 7.0), 6, 2.0)
 
 	# Porch light over the door
 	_prop(root, "sconce", Vector3(0.0, 3.4, bz - 5.25), 0.0, 1.0)
@@ -1001,23 +1319,29 @@ func _build_end_area() -> void:
 
 	# Interior: someone left in a hurry
 	_prop(root, "hospital_bed", Vector3(3.4, 0.48, bz + 3.4), 12.0)
-	_prop(root, "footlocker", Vector3(1.6, 0.44, bz + 3.8), 80.0)
-	_prop(root, "radio", Vector3(-3.8, 0.95, bz + 4.2), 145.0)
-	var crate := _prop(root, "beacon_crate", Vector3(-3.8, 0.48, bz + 4.2), 10.0)
+	_prop(root, "footlocker", Vector3(1.6, 0.43, bz + 3.8), 80.0)
+	_prop(root, "radio", Vector3(-3.8, 0.87, bz + 4.2), 145.0)
+	var crate := _prop(root, "beacon_crate", Vector3(-3.8, 0.12, bz + 4.2), 10.0)
 	if crate == null:
 		_csg(root, Vector3(-3.8, 0.5, bz + 4.2), Vector3(0.8, 0.8, 0.8), board)
 	_prop(root, "stool", Vector3(-2.6, 0.12, bz + 3.2), -140.0)
-	_prop(root, "shelf", Vector3(5.1, 1.0, bz + 1.0), -90.0)
+	_prop(root, "shelf", Vector3(5.1, 1.22, bz + 1.0), -90.0)
 	_prop(root, "gnome", Vector3(4.0, 0.12, bz - 3.6), 230.0)
+	_paper_scatter(root, Vector3(0.0, 0.12, bz + 1.0), 7, 2.0)
+	_prop(root, "refrigerator", Vector3(-4.9, 0.12, bz + 0.2), 90.0)
+	_prop(root, "wall_shelf", Vector3(-5.25, 1.5, bz + 2.4), 90.0)
 	_omni(root, Vector3(0.0, 3.4, bz + 1.0), Color(1.0, 0.86, 0.6), 0.9, 7.0)
 	_prop(root, "bell_light", Vector3(0.0, 3.85, bz + 1.0), 0.0, 1.0)
 
 	# Path dressing between interior and safehouse (z 94..100)
 	_prop(root, "fence_chain", Vector3(-7.0, 1.63, 97.0), 25.0)
 	_prop(root, "fence_chain", Vector3(7.0, 1.63, 97.0), -20.0)
-	_prop(root, "oildrum", Vector3(-4.4, 0.46, 96.5), 200.0)
+	_prop(root, "oildrum", Vector3(-4.4, 0.42, 96.5), 200.0)
 	_prop(root, "bush", Vector3(5.2, 0.04, 95.5), 0.0)
 	_prop(root, "bush", Vector3(-5.6, 0.04, 99.0), 120.0)
+	_rubble_pile(root, Vector3(3.8, 0.05, 94.0))
+	_prop(root, "detail_grass", Vector3(-4.4, 0.04, 94.5), 70.0)
+	_prop(root, "detail_grass", Vector3(4.8, 0.04, 92.5), 200.0)
 	_street_lamp(root, Vector3(4.5, 0.04, 98.5), -135.0, false)
 
 	# Level complete trigger (unchanged)
@@ -1031,6 +1355,106 @@ func _build_end_area() -> void:
 	trigger.position = Vector3(0.0, 1.5, bz + 1.0)
 	root.add_child(trigger)
 	trigger.body_entered.connect(_on_level_complete)
+
+
+# ---------------------------------------------------------------------------
+# Map edges — continuous street-canyon walls + collapsed street ends so the
+# player can never see out of the world.
+# ---------------------------------------------------------------------------
+
+func _build_map_edges() -> void:
+	var root := Node3D.new()
+	root.name = "MapEdges"
+	add_child(root)
+
+	var dark_mat := SourceMaterials.mat("skyline", Color(0.13, 0.14, 0.165))
+	var lit := SourceMaterials.lit_window_mat()
+
+	# Continuous 16m canyon walls along both sides of the playable corridor.
+	# They read as the unbroken back row of City 17 blocks.
+	_csg(root, Vector3(-22.0, 7.8, 60.0), Vector3(4.0, 16.0, 152.0), dark_mat, "CanyonWest")
+	_csg(root, Vector3(22.0, 7.8, 60.0), Vector3(4.0, 16.0, 152.0), dark_mat, "CanyonEast")
+	# Parapet caps so the rooflines don't end in a knife edge
+	_deco(root, Vector3(-22.0, 16.0, 60.0), Vector3(4.3, 0.5, 152.3), SourceMaterials.mat("trim"))
+	_deco(root, Vector3(22.0, 16.0, 60.0), Vector3(4.3, 0.5, 152.3), SourceMaterials.mat("trim"))
+	# Sparse lit windows facing inward so the walls read as inhabited blocks
+	for i in range(10):
+		var wz := -8.0 + i * 14.0
+		if i % 3 != 1:
+			_deco(root, Vector3(-19.95, 4.0 + (i % 4) * 2.6, wz), Vector3(0.1, 1.0, 0.7), lit)
+		if i % 3 != 2:
+			_deco(root, Vector3(19.95, 5.0 + (i % 4) * 2.4, wz + 5.0), Vector3(0.1, 1.0, 0.7), lit)
+	# Rooftop water tanks/chimneys silhouetted on the canyon walls
+	_prop(root, "fuel_cask", Vector3(-22.0, 15.8, 30.0), 20.0, 0.8)
+	_prop(root, "chimney", Vector3(22.0, 15.8, 52.0), -15.0)
+	_prop(root, "fuel_cask", Vector3(22.0, 15.8, 96.0), 70.0, 0.8)
+	_prop(root, "chimney", Vector3(-22.0, 15.8, 88.0), 35.0)
+
+	# South end (behind the staging area): row of building masses + rubble berm.
+	_end_building_row(root, -16.0, false)
+	_street_end_blockade(root, Vector3(0.0, 0.0, -13.0), 0.0)
+
+	# North end (past the safehouse): same treatment, collapsed street.
+	_end_building_row(root, 130.0, true)
+	_street_end_blockade(root, Vector3(0.0, 0.0, 124.0), 180.0)
+
+	# Caps over the side gaps between plaza blocks and the canyon walls
+	_csg(root, Vector3(-17.0, 6.0, 70.0), Vector3(6.0, 12.0, 4.0), dark_mat, "PlazaCapW")
+	_csg(root, Vector3(17.0, 6.0, 70.0), Vector3(6.0, 12.0, 4.0), dark_mat, "PlazaCapE")
+
+
+## Street-end backdrop: three offset building masses with varied facades,
+## lit windows and roof clutter, so the map edge reads as more city — not a
+## single giant blank wall. `faces_north` flips which side gets windows.
+func _end_building_row(parent: Node, z: float, faces_north: bool) -> void:
+	var face := "-z" if faces_north else "+z"
+	var dz := -1.5 if faces_north else 1.5
+	_building(parent, Vector3(-14.0, 7.0, z - dz), Vector3(20.0, 14.0, 5.0),
+		"indust_wall", [face])
+	_building(parent, Vector3(2.0, 8.5, z), Vector3(14.0, 17.0, 5.0),
+		"concrete_wall_b", [face])
+	_building(parent, Vector3(16.0, 6.5, z - dz), Vector3(16.0, 13.0, 5.0),
+		"brick_inn", [face])
+	# Backfill behind the row so no sky leaks between the offset masses
+	_deco(parent, Vector3(0.0, 9.0, z - dz * 2.0),
+		Vector3(50.0, 20.0, 2.0), SourceMaterials.mat("skyline", Color(0.13, 0.14, 0.165)))
+
+
+## Collapsed-street blockade: rubble mound + ruined wall + wrecked cars +
+## barricades. Implies the road continues but is buried.
+func _street_end_blockade(parent: Node, pos: Vector3, rot_y: float) -> void:
+	var blockade := Node3D.new()
+	parent.add_child(blockade)
+	blockade.position = pos
+	blockade.rotation_degrees.y = rot_y
+
+	var rubble_mat := SourceMaterials.mat("concrete_old")
+	var dirt_mat := SourceMaterials.mat("dirt")
+
+	# Rubble mound: stacked tilted slabs reading as a collapsed building edge
+	var mound := _csg(blockade, Vector3(0.0, 0.8, -1.0), Vector3(18.0, 2.6, 4.5), rubble_mat)
+	mound.rotation_degrees.x = -14.0
+	var mound2 := _csg(blockade, Vector3(-4.0, 1.6, -1.8), Vector3(9.0, 2.4, 4.0), dirt_mat)
+	mound2.rotation_degrees = Vector3(-9.0, 14.0, 6.0)
+	var mound3 := _csg(blockade, Vector3(5.0, 1.4, -2.0), Vector3(8.0, 2.2, 3.6), rubble_mat)
+	mound3.rotation_degrees = Vector3(-11.0, -10.0, -5.0)
+
+	# Ruined wall sections rising out of the rubble
+	_prop(blockade, "wall_ruin9", Vector3(0.0, 1.9, -3.0), 0.0)
+	_prop(blockade, "wall_ruin", Vector3(-6.5, 1.8, -1.5), 12.0)
+	_prop(blockade, "wall_ruin", Vector3(7.0, 1.7, -2.0), -8.0)
+
+	# Wrecked car cluster shoved against the rubble (kept clear of the
+	# staging-area truck on the south end)
+	_prop(blockade, "car_cluster2", Vector3(4.5, 0.1, 2.2), 14.0, 0.9)
+
+	# Front dressing: barricades, rebar, loose chunks
+	_prop(blockade, "barricade_x", Vector3(-3.5, 0.81, 4.4), 25.0)
+	_prop(blockade, "barricade_tri", Vector3(3.0, 0.51, 4.8), -30.0)
+	_prop(blockade, "rebar_big", Vector3(1.2, 0.45, 3.6), 50.0)
+	_rubble_pile(blockade, Vector3(-5.5, 0.0, 4.0), true)
+	_rubble_pile(blockade, Vector3(4.8, 0.0, 3.4), true)
+	_rubble_pile(blockade, Vector3(0.5, 0.0, 5.2))
 
 
 # ---------------------------------------------------------------------------
@@ -1105,18 +1529,23 @@ func _spawn_npcs() -> void:
 		var hecu_scene := ResourceLoader.load(HECU_SOLDIER_SCENE) as PackedScene
 		if hecu_scene != null:
 			var hecu := hecu_scene.instantiate()
-			hecu.position = Vector3(3.0, 0.5, 2.0)
+			hecu.position = Vector3(3.0, 0.3, 2.0)
 			add_child(hecu)
+			_spawned_npcs.append(hecu)
 
 	if ResourceLoader.exists(RESISTANCE_SOLDIER_SCENE):
 		var rs_scene := ResourceLoader.load(RESISTANCE_SOLDIER_SCENE) as PackedScene
 		if rs_scene != null:
 			# Street fighters patrol up and down the road so they read as
 			# moving (visible walk cycle) instead of standing mannequins.
+			# NOTE: spawn points must be clear of prop collision bodies —
+			# overlapping a static body at spawn depenetrates the capsule
+			# through the thin road CSG (the "NPC in the ground" bug; the old
+			# spawn at (5, 40) intersected the sidewalk dumpster).
 			var street_spawns := [
-				[Vector3(4.0, 0.5, 25.0), [Vector3(4.0, 0.5, 36.0), Vector3(4.0, 0.5, 24.0)]],
-				[Vector3(5.0, 0.5, 40.0), [Vector3(-3.0, 0.5, 44.0), Vector3(5.0, 0.5, 39.0)]],
-				[Vector3(-5.5, 0.5, 35.0), [Vector3(-5.5, 0.5, 23.0), Vector3(-5.5, 0.5, 36.0)]],
+				[Vector3(4.0, 0.3, 25.0), [Vector3(4.0, 0.3, 36.0), Vector3(4.0, 0.3, 24.0)]],
+				[Vector3(3.8, 0.3, 38.0), [Vector3(-3.0, 0.3, 46.5), Vector3(3.8, 0.3, 38.0)]],
+				[Vector3(-5.5, 0.3, 35.0), [Vector3(-5.5, 0.3, 23.0), Vector3(-5.5, 0.3, 36.0)]],
 			]
 			for entry in street_spawns:
 				var rs := rs_scene.instantiate()
@@ -1125,23 +1554,25 @@ func _spawn_npcs() -> void:
 				wp.assign(entry[1])
 				rs.waypoints = wp
 				add_child(rs)
+				_spawned_npcs.append(rs)
 
 			var alley_positions := [
-				Vector3(-8.0, 0.5, 48.0),
-				Vector3(-8.0, 0.5, 55.0),
+				Vector3(-10.2, 0.3, 49.0),
+				Vector3(-8.3, 0.3, 48.4),
 			]
 			for pos in alley_positions:
 				var rs := rs_scene.instantiate()
 				rs.position = pos
 				add_child(rs)
+				_spawned_npcs.append(rs)
 
 			# Two plaza guards circle the fountain; the rest hold position.
 			var plaza_spawns := [
-				[Vector3(-3.0, 0.5, 65.0), [Vector3(3.0, 0.5, 65.0), Vector3(-3.0, 0.5, 65.0)]],
-				[Vector3(3.0, 0.5, 65.0), []],
-				[Vector3(-6.0, 0.5, 70.0), [Vector3(-6.0, 0.5, 76.0), Vector3(-6.0, 0.5, 69.0)]],
-				[Vector3(6.0, 0.5, 70.0), []],
-				[Vector3(0.0, 0.5, 74.0), []],
+				[Vector3(-3.0, 0.3, 65.0), [Vector3(3.0, 0.3, 65.0), Vector3(-3.0, 0.3, 65.0)]],
+				[Vector3(3.0, 0.3, 65.5), []],
+				[Vector3(-6.0, 0.3, 70.0), [Vector3(-6.0, 0.3, 76.0), Vector3(-6.0, 0.3, 69.0)]],
+				[Vector3(6.0, 0.3, 69.0), []],
+				[Vector3(0.0, 0.3, 74.0), []],
 			]
 			for entry in plaza_spawns:
 				var rs := rs_scene.instantiate()
@@ -1150,16 +1581,18 @@ func _spawn_npcs() -> void:
 				wp.assign(entry[1])
 				rs.waypoints = wp
 				add_child(rs)
+				_spawned_npcs.append(rs)
 
 			var interior_positions := [
-				Vector3(-2.0, 0.5, 87.0),
-				Vector3(2.5, 0.5, 89.0),
-				Vector3(0.0, 4.7, 88.0),
+				Vector3(-2.0, 0.3, 87.0),
+				Vector3(2.5, 0.3, 89.5),
+				Vector3(0.0, 4.5, 88.0),
 			]
 			for pos in interior_positions:
 				var rs := rs_scene.instantiate()
 				rs.position = pos
 				add_child(rs)
+				_spawned_npcs.append(rs)
 
 
 # ---------------------------------------------------------------------------
