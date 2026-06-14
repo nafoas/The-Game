@@ -51,7 +51,7 @@ class Installer(tk.Tk):
         self.title("Hunt Down Joe Biden - Installer")
         self.resizable(False, False)
         self.configure(bg=BG)
-        self._center(700, 500)
+        self._center(700, 560)
 
         self._dir     = tk.StringVar(value=DEFAULT_DIR)
         self._busy    = False
@@ -72,6 +72,22 @@ class Installer(tk.Tk):
 
     # ------------------------------------------------------------------
     def _build_ui(self):
+        # Pack button bar FIRST so it always reserves space at the bottom,
+        # regardless of how much content the sections above take up.
+        bf = tk.Frame(self, bg=BG2)
+        bf.pack(fill="x", pady=10, padx=20, side="bottom")
+        self._btn = tk.Button(
+            bf, text="Checking...",
+            font=("Arial", 11, "bold"), bg=GREY2, fg=GREY,
+            activebackground="#ffb84d", activeforeground="#000",
+            relief="flat", bd=0, padx=20, pady=8,
+            cursor="hand2", state="disabled", command=self._start)
+        self._btn.pack(side="right")
+        tk.Button(bf, text="Cancel", font=("Arial", 9),
+                  bg=BG2, fg=GREY, activebackground=BG3,
+                  relief="flat", bd=0, padx=10, pady=8,
+                  cursor="hand2", command=self.destroy).pack(side="right", padx=(0, 8))
+
         tk.Frame(self, bg=ORANGE, height=5).pack(fill="x")
 
         tk.Label(self, text=GAME_TITLE, font=("Arial", 18, "bold"),
@@ -152,20 +168,6 @@ class Installer(tk.Tk):
         sty.configure("TProgressbar", troughcolor=BG2,
                       background=ORANGE, thickness=6)
 
-        # Buttons
-        bf = tk.Frame(self, bg=BG2)
-        bf.pack(fill="x", pady=12, padx=20, side="bottom")
-        self._btn = tk.Button(
-            bf, text="Checking...",
-            font=("Arial", 11, "bold"), bg=GREY2, fg=GREY,
-            activebackground="#ffb84d", activeforeground="#000",
-            relief="flat", bd=0, padx=20, pady=8,
-            cursor="hand2", state="disabled", command=self._start)
-        self._btn.pack(side="right")
-        tk.Button(bf, text="Cancel", font=("Arial", 9),
-                  bg=BG2, fg=GREY, activebackground=BG3,
-                  relief="flat", bd=0, padx=10, pady=8,
-                  cursor="hand2", command=self.destroy).pack(side="right", padx=(0, 8))
 
     def _make_link(self, parent, text, url):
         lbl = tk.Label(parent, text=text, font=("Arial", 9),
